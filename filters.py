@@ -605,7 +605,8 @@ def kalman_filter_md(y, F, Q, H, R, m0=None, P0=None):
 
 
 def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
-                       ess_threshold=0.5, return_particles=False):
+                       ess_threshold=0.5, return_particles=False,
+                       proposal="bootstrap"):
     """Bootstrap particle filter for the multidimensional model.
 
     Identical cycle to the scalar version -- propagate, weight, normalise,
@@ -644,6 +645,31 @@ def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
         Resample when ESS < ess_threshold * N. The usual N/2 rule.
     return_particles : bool
         Also return the full weighted cloud at every step.
+    proposal : {"bootstrap", "optimal"}
+        How particles are moved forward.
+
+        "bootstrap" (default) samples from the prior transition
+        p(x_t | x_{t-1}), ignoring y_t until the weighting step. Simple and
+        general, but it means particles are placed without any regard for
+        where the observation says they should be -- so when the likelihood is
+        sharp, few of them land anywhere useful and the weights become uneven.
+
+        "optimal" samples from p(x_t | x_{t-1}, y_t) instead, which looks at
+        the observation BEFORE moving the particles. For a linear-Gaussian
+        model this distribution is available in closed form:
+
+            Sigma* = (Q^-1 + H' R^-1 H)^-1
+            m*_i   = Sigma* (Q^-1 F x_{t-1}^i + H' R^-1 y_t)
+
+        and the incremental weight collapses to the predictive likelihood
+        p(y_t | x_{t-1}^i) = N(y_t; H F x_{t-1}^i, H Q H' + R), which no longer
+        depends on the newly sampled state at all. This is the locally optimal
+        proposal of Doucet et al. (2000); it minimises the variance of the
+        incremental weights given the past, and is the standard remedy when a
+        sharp likelihood is degrading the bootstrap filter.
+
+        Both choices target the SAME posterior, so both are still compared
+        against the same exact Kalman benchmark.
 
     Returns
     -------
@@ -661,6 +687,21 @@ def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
     LQ = np.linalg.cholesky(Q)   # for sampling the process noise
     LR = np.linalg.cholesky(R)   # for evaluating the observation likelihood
 
+    if proposal not in ("bootstrap", "optimal"):
+        raise ValueError("proposal must be 'bootstrap' or 'optimal'")
+    if proposal == "optimal":
+        # All of these are constant in t, so they are formed once here rather
+        # than rebuilt every step.
+        Qinv = np.linalg.inv(Q)
+        Rinv = np.linalg.inv(R)
+        Sigma_star = np.linalg.inv(Qinv + H.T @ Rinv @ H)   # proposal covariance
+        L_star = np.linalg.cholesky(Sigma_star)             # for sampling from it
+        y_term = H.T @ Rinv                                 # applied to y_t below
+        # Covariance of the predictive likelihood p(y_t | x_{t-1}), which is
+        # what the incremental weight uses under this proposal.
+        S_pred = H @ Q @ H.T + R
+        L_pred = np.linalg.cholesky(S_pred)
+
     start = np.zeros(d) if x0 is None else np.asarray(x0, dtype=float)
     particles = np.tile(start, (N, 1))          # (N, d)
     weights = np.full(N, 1.0 / N)
@@ -672,19 +713,37 @@ def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
     weights_hist = np.zeros((T, N)) if return_particles else None
 
     for t in range(T):
-        # --- 1. Propagate every particle through the state equation ---
-        # (N,d) @ (d,d) applies F to each particle; the noise term turns
-        # standard normals into draws with covariance Q.
-        z = rng.standard_normal((N, d))
-        particles = particles @ F.T + z @ LQ.T
+        if proposal == "bootstrap":
+            # --- 1. Propagate every particle through the state equation ---
+            # (N,d) @ (d,d) applies F to each particle; the noise term turns
+            # standard normals into draws with covariance Q.
+            z = rng.standard_normal((N, d))
+            particles = particles @ F.T + z @ LQ.T
 
-        # --- 2. Weight by the M-dimensional Gaussian likelihood ---
-        innov = y[t] - particles @ H.T          # (N, M) residual per particle
-        # Solve L_R u = innov' so that u'u = innov' R^{-1} innov, without ever
-        # forming R^{-1}.
-        u = np.linalg.solve(LR, innov.T)        # (M, N)
-        quad = np.sum(u ** 2, axis=0)           # (N,) Mahalanobis distances
-        log_w = -0.5 * quad + np.log(weights)
+            # --- 2. Weight by the M-dimensional Gaussian likelihood ---
+            innov = y[t] - particles @ H.T      # (N, M) residual per particle
+            # Solve L_R u = innov' so that u'u = innov' R^{-1} innov, without
+            # ever forming R^{-1}.
+            u = np.linalg.solve(LR, innov.T)    # (M, N)
+            quad = np.sum(u ** 2, axis=0)       # (N,) Mahalanobis distances
+            log_w = -0.5 * quad + np.log(weights)
+        else:
+            # --- Optimal proposal: look at y_t BEFORE moving the particles ---
+            prior_mean = particles @ F.T        # (N,d) where the prior alone points
+
+            # Weight first: under this proposal the incremental weight is the
+            # predictive likelihood p(y_t | x_{t-1}), which depends only on the
+            # PREVIOUS particle, not on the new sample. That is exactly why this
+            # proposal has lower weight variance than the bootstrap one.
+            innov = y[t] - prior_mean @ H.T     # (N,M)
+            u = np.linalg.solve(L_pred, innov.T)
+            quad = np.sum(u ** 2, axis=0)
+            log_w = -0.5 * quad + np.log(weights)
+
+            # Then move the particles, pulled towards the observation.
+            z = rng.standard_normal((N, d))
+            mean_star = (prior_mean @ Qinv.T + y[t] @ y_term.T) @ Sigma_star.T
+            particles = mean_star + z @ L_star.T
 
         # --- 3. Normalise with the log-sum-exp shift ---
         # Subtracting the max before exponentiating avoids underflow: without
@@ -850,7 +909,8 @@ def summarise_case(pf_est, kf_mean, kf_cov, ess):
     }
 
 
-def run_case(d, M, N=1000, T=100, data_seed=42, pf_seed=0, **model_kwargs):
+def run_case(d, M, N=1000, T=100, data_seed=42, pf_seed=0,
+             proposal="bootstrap", **model_kwargs):
     """Build a model, simulate data, run both filters, and summarise.
 
     A thin wrapper over the four steps the notebook performs explicitly in its
@@ -870,7 +930,8 @@ def run_case(d, M, N=1000, T=100, data_seed=42, pf_seed=0, **model_kwargs):
     F, Q, H, R = build_model(d, M, **model_kwargs)
     x, y = simulate_data_md(F, Q, H, R, T=T, seed=data_seed)
     kf_mean, kf_cov = kalman_filter_md(y, F, Q, H, R)
-    pf_est, ess, resampled = particle_filter_md(y, F, Q, H, R, N=N, seed=pf_seed)
+    pf_est, ess, resampled = particle_filter_md(y, F, Q, H, R, N=N, seed=pf_seed,
+                                               proposal=proposal)
 
     out = {
         "d": d, "M": M, "N": N, "T": T,

@@ -13,7 +13,8 @@ Carlo error and nothing else. That makes this setting the ideal test bed for mea
 filter accuracy directly instead of guessing at it.
 
 **Part 1** establishes the method in one dimension. **Part 2** extends it to many dimensions and
-asks which dimension actually hurts.
+asks which dimension actually hurts. **Part 3** stress-tests Part 2's conclusions — over longer
+horizons, across many datasets, and against a smarter filter.
 
 ## What's in this repo
 
@@ -21,9 +22,12 @@ asks which dimension actually hurts.
 |---|---|
 | `kf_pf_lab.ipynb` | **Part 1.** The 1D Kalman-vs-particle-filter study: simulation, both filters, the PF–KF comparison, stability over time and `N`, ESS and resampling, and a nonlinear example. |
 | `md_dimension_study.ipynb` | **Part 2.** The multidimensional study: the three `M` vs `d` regimes, side-by-side comparison, and dimension scaling. |
-| `filters.py` | All reusable filter code, imported by both notebooks. NumPy only, no other dependencies. |
+| `robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. |
+| `filters.py` | All reusable filter code, imported by every notebook. NumPy only, no other dependencies. |
+| `export_figures.py` | Unpacks every plot from the notebooks into `figures/`. |
+| `figures/` | All 23 figures as standalone PNGs, named `<notebook>__fig<NN>__<section>.png`. |
 
-Both notebooks are committed **with their outputs**, so every plot and number renders on GitHub
+All three notebooks are committed **with their outputs**, so every plot and number renders on GitHub
 without running anything.
 
 ---
@@ -114,26 +118,59 @@ these numbers that compares fairly across regimes.
 
 ---
 
+# Part 3: Robustness — long horizons, error bars, and better proposals
+
+Part 2's headline claims each rested on **one dataset**, **100 time steps**, and **one kind of
+particle filter**. Part 3 attacks all three assumptions. Two claims survive; one needed correcting.
+
+| Part 2 claim | Verdict |
+|---|---|
+| Error stays flat over time | **Confirmed and strengthened.** Flat to within 3% over `T = 2000`, with drift of a fraction of a percent per 1000 steps, inconsistent in sign across regimes. |
+| Regimes perform near-identically relative to posterior width | **Corrected.** Over 30 datasets the relative gaps are `0.055`, `0.059`, `0.078` and every pairwise difference is statistically clear (`\|t\|` = 2.6, 12.6, 9.7). `M < d` is genuinely ~40% worse. The ordering survives; "almost identical" does not. |
+| Degeneracy is driven by `M`, not `d` | **Confirmed, and explained.** Reproducible with non-overlapping error bars — but it is a property of the *bootstrap proposal*, not of particle filtering. |
+
+### The proposal result
+
+The bootstrap filter moves particles using the state equation alone, consulting the observation only
+afterwards. The **locally optimal proposal** (Doucet et al., 2000) samples from
+`p(x_t | x_{t-1}, y_t)` instead — looking at the observation *before* moving each particle — which
+is available in closed form for a linear-Gaussian model. Both target the same posterior.
+
+| M (with d = 4) | bootstrap min ESS | optimal min ESS | bootstrap rel. gap | optimal rel. gap |
+|---|---|---|---|---|
+| 1 | 63.1 | 257.1 | 0.0628 | 0.0401 |
+| 4 | 7.2 | 162.8 | 0.0963 | 0.0427 |
+| 16 | **1.4** | **223.9** | **0.2145** | **0.0387** |
+
+At `M = 16` the bootstrap cloud collapses to about 1.4 effective particles out of 1000; the optimal
+proposal holds ~224, a **160x** difference. The accuracy trend separates too: the bootstrap relative
+gap degrades by a factor of 3.4 as `M` grows, while the optimal proposal's stays flat at ~0.04.
+
+So the honest statement of Part 2's finding is not "large `M` breaks particle filters" but
+**"large `M` breaks filters that propose blindly from the prior"** — a fixable problem, not a
+fundamental barrier.
+
+---
+
 ## Next steps
 
-1. **Longer time horizons.** Everything runs to `T = 100`. Extending to `T = 1000+` would test
-   whether the flat error curves really indicate time-uniform stability. Cheap, and the natural
-   immediate next step.
-2. **Averaging over many datasets.** The sweeps average over 10 particle-filter seeds but hold a
-   single simulated dataset. Averaging over datasets too would separate "this realisation was easy"
-   from genuine properties of a regime, and would put error bars on the curves.
-3. **Better proposals for large `M`.** The bootstrap filter proposes from the prior, ignoring the
-   observation entirely, which is the worst case exactly where Part 2 found the damage. A guided or
-   auxiliary proposal would test whether the `M`-driven collapse is intrinsic to particle filtering
-   or only to this filter.
-4. **Sequential Quasi-Monte Carlo (SQMC).** The `O(1/sqrt(N))` rate confirmed in every regime is the
+Items 1-3 of the original plan (long horizons, many-dataset error bars, better proposals) are **done
+in Part 3**. What genuinely remains:
+
+1. **Sequential Quasi-Monte Carlo (SQMC).** The `O(1/sqrt(N))` rate confirmed in every regime is the
    fundamental limit of plain Monte Carlo. SQMC replaces random draws with low-discrepancy points
    and can converge faster; in more than one dimension this needs a **Hilbert space-filling curve**
    to order the multidimensional particles. The slopes measured here are the baseline any SQMC
    result should beat.
-5. **Smoothing rather than filtering.** Estimating `p(x_t | y_0:T)` instead of `p(x_t | y_0:t)`
+2. **Smoothing rather than filtering.** Estimating `p(x_t | y_0:T)` instead of `p(x_t | y_0:t)`
    should help most precisely where filtering struggled — the unmeasured coordinates of the `M < d`
-   case, where later observations carry information about earlier unmeasured states.
+   case, where later observations carry information about earlier unmeasured states. The Kalman
+   smoother is again available as an exact benchmark.
+3. **Optimal proposals beyond the linear-Gaussian case.** Part 3's rescue relies on a closed form
+   that only exists because the model is linear-Gaussian. In a nonlinear model the proposal must be
+   approximated, so how much of the rescue survives is an open question.
+4. **Error bars on the rest of Part 2.** Part 3 re-examined one single-dataset claim and it needed
+   correcting; the others deserve the same treatment.
 
 ## Running it
 
@@ -143,7 +180,16 @@ python3 -m venv .venv
 .venv/bin/jupyter notebook
 ```
 
+To regenerate the standalone PNGs in `figures/` from the notebooks:
+
+```bash
+.venv/bin/python export_figures.py
+```
+
 ## Reference
 
 Gerber, M. & Chopin, N. (2015). *Sequential Quasi-Monte Carlo.* Journal of the Royal Statistical
 Society: Series B, 77(3), 509–579.
+
+Doucet, A., Godsill, S. & Andrieu, C. (2000). *On sequential Monte Carlo sampling methods for
+Bayesian filtering.* Statistics and Computing, 10(3), 197–208.
