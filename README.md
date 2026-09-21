@@ -28,8 +28,6 @@ less stable than a Gaussian one when the observations are unbounded.
 | `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, tested in ordinary data and under very large observations. |
 | `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
-| `export_figures.py` | Unpacks every plot from the notebooks into `figures/`. |
-| `figures/` | All 29 figures as standalone PNGs, named `<notebook>__fig<NN>__<section>.png`, with an index in `figures/README.md`. |
 
 The notebooks are numbered in reading order, and all four are committed **with their outputs**, so
 every plot and number renders on GitHub without running anything.
@@ -254,12 +252,6 @@ in Part 3**. What genuinely remains:
 python3 -m venv .venv
 .venv/bin/pip install numpy matplotlib jupyter
 .venv/bin/jupyter notebook
-```
-
-To regenerate the standalone PNGs in `figures/` from the notebooks:
-
-```bash
-.venv/bin/python export_figures.py
 ```
 
 ## Reference
