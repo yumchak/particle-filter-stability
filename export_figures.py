@@ -15,7 +15,7 @@ Naming
 
 for example
 
-    md_dimension_study__fig05__section-4-under-observed-m-d-the-hard-case.png
+    02_md_dimension_study__fig05__section-4-under-observed-the-hard-case.png
 
 so it is always obvious which notebook and which section a figure belongs to.
 The section is taken from the nearest markdown heading above the cell that
@@ -34,9 +34,10 @@ import re
 from pathlib import Path
 
 NOTEBOOKS = [
-    "kf_pf_lab.ipynb",           # Part 1 -- the 1D study
-    "md_dimension_study.ipynb",  # Part 2 -- dimension regimes
-    "robustness_study.ipynb",    # Part 3 -- robustness and proposals
+    "01_kf_pf_1d_comparison.ipynb",    # Part 1 -- the 1D study
+    "02_md_dimension_study.ipynb",     # Part 2 -- dimension regimes
+    "03_robustness_study.ipynb",       # Part 3 -- robustness and proposals
+    "04_student_t_vs_gaussian.ipynb",  # Part 4 -- Student-t vs Gaussian state noise
 ]
 OUT_DIR = Path("figures")
 
@@ -91,9 +92,10 @@ def export(nb_path, out_dir):
 
 
 PART_OF = {
-    "kf_pf_lab": "Part 1 - the 1D Kalman vs particle filter study",
-    "md_dimension_study": "Part 2 - dimension regimes (M vs d)",
-    "robustness_study": "Part 3 - robustness, long horizons and proposals",
+    "01_kf_pf_1d_comparison": "Part 1 - the 1D Kalman vs particle filter study",
+    "02_md_dimension_study": "Part 2 - dimension regimes (M vs d)",
+    "03_robustness_study": "Part 3 - robustness, long horizons and proposals",
+    "04_student_t_vs_gaussian": "Part 4 - Student-t vs Gaussian state noise",
 }
 
 

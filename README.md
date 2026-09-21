@@ -14,21 +14,25 @@ filter accuracy directly instead of guessing at it.
 
 **Part 1** establishes the method in one dimension. **Part 2** extends it to many dimensions and
 asks which dimension actually hurts. **Part 3** stress-tests Part 2's conclusions — over longer
-horizons, across many datasets, and against a smarter filter.
+horizons, across many datasets, and against a smarter filter. **Part 4** returns to one dimension to
+test a conjecture from Dr Gerber: that a particle filter run with Student-t state noise should be
+less stable than a Gaussian one when the observations are unbounded.
 
 ## What's in this repo
 
 | File | Contents |
 |---|---|
-| `kf_pf_lab.ipynb` | **Part 1.** The 1D Kalman-vs-particle-filter study: simulation, both filters, the PF–KF comparison, stability over time and `N`, ESS and resampling, and a nonlinear example. |
-| `md_dimension_study.ipynb` | **Part 2.** The multidimensional study: the three `M` vs `d` regimes, side-by-side comparison, and dimension scaling. |
-| `robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. |
-| `filters.py` | All reusable filter code, imported by every notebook. NumPy only, no other dependencies. |
+| `01_kf_pf_1d_comparison.ipynb` | **Part 1.** The 1D Kalman-vs-particle-filter study: simulation, both filters, the PF–KF comparison, stability over time and `N`, ESS and resampling, and a nonlinear example. |
+| `02_md_dimension_study.ipynb` | **Part 2.** The multidimensional study: the three `M` vs `d` regimes, side-by-side comparison, and dimension scaling. |
+| `03_robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. |
+| `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, tested in ordinary data and under very large observations. |
+| `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
+| `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 | `export_figures.py` | Unpacks every plot from the notebooks into `figures/`. |
-| `figures/` | All 23 figures as standalone PNGs, named `<notebook>__fig<NN>__<section>.png`. |
+| `figures/` | All 29 figures as standalone PNGs, named `<notebook>__fig<NN>__<section>.png`, with an index in `figures/README.md`. |
 
-All three notebooks are committed **with their outputs**, so every plot and number renders on GitHub
-without running anything.
+The notebooks are numbered in reading order, and all four are committed **with their outputs**, so
+every plot and number renders on GitHub without running anything.
 
 ---
 
@@ -150,6 +154,75 @@ So the honest statement of Part 2's finding is not "large `M` breaks particle fi
 **"large `M` breaks filters that propose blindly from the prior"** — a fixable problem, not a
 fundamental barrier.
 
+# Part 4: Student-t vs Gaussian state noise
+
+Dr Gerber's question: run the 1D particle filter *as if* the state noise `v_t` were Student-t, and
+compare it with the ordinary Gaussian filter. His conjecture: **if the observations are unbounded,
+the Student-t filter should be less stable.** The data are generated from the Gaussian model with
+`a = 1`, exactly as in Part 1. Only the filter changes, and only in one line: how particles move.
+
+### A new benchmark was needed
+
+The Kalman filter is *not* the exact answer for a Student-t model, so comparing the Student-t filter
+to it would mix up two different things: the particles failing to represent their target
+(**approximation error**, which is what "unstable" means) and the Student-t model simply having a
+different posterior (**model error**, which would remain even with infinitely many particles). So
+`student_t_filters.py` adds a **grid filter**: a deterministic numerical filter that computes the
+exact posterior of either model on a fine grid. Each particle filter is scored against the exact
+filter of **its own** model. The grid filter matches the Kalman filter to about `1e-15`, and the new
+particle filter reproduces Part 1 **bit for bit** when its noise is Gaussian.
+
+### Key findings
+
+- **On ordinary data from the model, there is no difference.** Every filter from Gaussian to Cauchy
+  has an approximation error of about `0.028`, flat in time, at the `O(1/sqrt(N))` rate. If anything
+  the Student-t filters look *healthier*: minimum ESS `33` at `nu = 1` against `7.6` for the
+  Gaussian.
+- **That is because in-model observations never get large.** The largest `|y_t|` is about `10` over
+  2000 steps and only `11.7` over 100,000 — the maximum of `T` Gaussian draws grows like
+  `sqrt(2 log T)`. The regime the conjecture is about is never visited.
+- **Under one large observation, the conjecture holds for moderate tails.** Inserting a single
+  observation `y* = 20` and measuring the accuracy of the log-likelihood estimate (200 seeds):
+
+  | filter | variance | bias | **RMSE** |
+  |---|---|---|---|
+  | Gaussian | 47.7 | −39.3 | **39.9** |
+  | Student-t `nu = 5` | 527.9 | −109.0 | **111.4** |
+  | Student-t `nu = 3` | 1072.7 | −66.7 | **74.3** |
+  | Student-t `nu = 1` (Cauchy) | 7.6 | −1.5 | **3.1** |
+
+- **For `nu = 5` more particles do not help.** The likelihood variance is `415`, `528`, `527`, `503`
+  as `N` goes from 250 to 16,000 — 64 times the computation buys nothing. That is instability in the
+  strongest practical sense.
+- **It is robust across datasets.** On 12 independent datasets the Student-t filters are worse than
+  the Gaussian in **12 out of 12** (`nu = 5`, median `11x`; `nu = 3`, median `21x`), and the Cauchy
+  is better in **12 out of 12** (median `0.08x`).
+- **But it is not monotonic in `nu` — the Cauchy is the most stable of all.** Heavier tails move the
+  filter's own target further out (harder to represent) but also let particles reach further (easier
+  to sample). At `y* = 20` the typical furthest of 1000 particles reaches `3.4` (Gaussian), `7.4`
+  (`nu = 5`), `15.9` (`nu = 3`) and about `1000` (`nu = 1`), while the targets sit at `10.6`, `19.7`,
+  `19.8` and `19.9`. At `nu = 5` the target escapes beyond reach; at `nu = 1` the particles overshoot
+  it by three orders of magnitude.
+
+**Verdict: partly supported.** The conjecture holds for moderate `nu` once observations are pushed
+into the large-innovation regime, but not as a monotone "heavier tails are less stable" statement,
+and it is invisible on in-model data.
+
+### Open questions and limitations
+
+- **The scale/shape control is incomplete.** Variance-matching the Student-t rules out "it is simply
+  wider", but a Gaussian filter run at the Student-t's reduced scale is still needed to separate
+  scale from tail shape properly.
+- **"Unbounded" may be the wrong dial.** What drives the behaviour is the size of the *innovation*,
+  not the level of the observation. A random-walk variant (`b = 1`), where observations reach the
+  seventies, would test this directly; it has not been run.
+- **The single-observation probe is artificial.** It measures the response to an arbitrarily large
+  innovation, which in-model data will not supply. Whether this is the formulation Dr Gerber
+  intended is the main question for the next meeting.
+- On the filtering *mean* (rather than the likelihood), the `nu = 3` result does not survive the
+  multi-dataset check (`7.41` against the Gaussian's `7.35`); only `nu = 5` (worse) and `nu = 1`
+  (better) separate reliably there.
+
 ---
 
 ## Next steps
@@ -171,6 +244,9 @@ in Part 3**. What genuinely remains:
    approximated, so how much of the rescue survives is an open question.
 4. **Error bars on the rest of Part 2.** Part 3 re-examined one single-dataset claim and it needed
    correcting; the others deserve the same treatment.
+5. **Close the Part 4 controls.** Run the shape-fixed control (a Gaussian filter at the Student-t's
+   scale) and the random-walk variant, and establish whether the worst case at intermediate `nu`
+   can be located analytically. See the Part 4 section above.
 
 ## Running it
 
