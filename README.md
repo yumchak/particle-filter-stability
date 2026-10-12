@@ -16,7 +16,9 @@ filter accuracy directly instead of guessing at it.
 asks which dimension actually hurts. **Part 3** stress-tests Part 2's conclusions — over longer
 horizons, across many datasets, and against a smarter filter. **Part 4** returns to one dimension to
 test a conjecture from Dr Gerber: that a particle filter run with Student-t state noise should be
-less stable than a Gaussian one when the observations are unbounded.
+less stable than a Gaussian one when the observations are unbounded. **Part 5** varies the state
+transition matrix `F` across the stability threshold `rho(F) = 1`, where the hidden state stops
+decaying and starts to explode.
 
 ## What's in this repo
 
@@ -26,11 +28,14 @@ less stable than a Gaussian one when the observations are unbounded.
 | `02_md_dimension_study.ipynb` | **Part 2.** The multidimensional study: the three `M` vs `d` regimes, side-by-side comparison, and dimension scaling. |
 | `03_robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. |
 | `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, tested in ordinary data and under very large observations. |
+| `05_f_stability_threshold.ipynb` | **Part 5.** Varies the spectral radius of `F` across the stability threshold, in 1D and in `d` dimensions, with and without coupling: accuracy, cloud health, long-run behaviour, and what happens when an explosive direction is never observed. |
 | `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 
-The notebooks are numbered in reading order, and all four are committed **with their outputs**, so
-every plot and number renders on GitHub without running anything.
+The notebooks are numbered in reading order, and all five are committed **with their outputs**, so
+every plot and number renders on GitHub without running anything. Part 5 needs no additions to
+`filters.py`: the spectral radius is already a parameter of `build_model`, reachable through
+`run_case(d, M, b=..., coupling=...)`.
 
 ---
 
@@ -221,12 +226,81 @@ and it is invisible on in-model data.
   multi-dataset check (`7.41` against the Gaussian's `7.35`); only `nu = 5` (worse) and `nu = 1`
   (better) separate reliably there.
 
+
+# Part 5: Crossing the stability threshold (`rho(F)` vs 1)
+
+Every result in Parts 1-4 was obtained at one setting of the transition matrix: `b = 0.9` in 1D, or
+`F` rescaled to spectral radius `0.9` in `d` dimensions. Part 5 makes it the variable.
+
+> **How does particle filter accuracy and stability change as the spectral radius of `F` crosses 1,
+> and does coupling between state dimensions affect this behaviour?**
+
+The threshold is governed by `rho(F)`, the largest absolute eigenvalue: below 1 the state forgets its
+past and a stationary distribution exists; at 1 it is a knife-edge random walk; above 1 the state
+variance is unbounded. Because `build_model` rescales by the spectral radius, `rho(F) = b` exactly,
+so `b` *is* the stability knob and **no change to `filters.py` was needed**.
+
+Four experiments, at `Q = R = I`, `N = 1000`, over `b = 0.5, 0.9, 0.99, 1.0, 1.01, 1.1`:
+1D (`F = b`), diagonal (`F = b*I`, `coupling = 0`), coupled (`coupling = 0.2`), and under-observed
+(`d = 2`, `M = 1`, so the explosive direction is never measured).
+
+### Key findings
+
+- **Crossing the threshold costs the particle filter almost nothing, when the state is fully
+  observed.** From `b = 0.9` to `b = 1.1` the state grows by a factor of `1.3e7` while the exact
+  posterior spread moves from `0.773` to `0.799` - a factor of `1.034`. The relative gap rises 16%
+  (`0.0580` to `0.0675`) and the ESS is unchanged. Over 30 datasets the increase is ~4.5% and
+  *marginally* statistically detectable (`|t| = 2.1`), then saturating: small and bounded, not absent.
+- **The reason: the posterior, not the state, sets the scale of the problem.** The variance recursion
+  has a bounded fixed point even when the state recursion does not. An unstable *model* is not a
+  difficult *inference problem*.
+- **What actually breaks is detectability, not stability.** With the explosive direction unobserved
+  (`d = 2`, `M = 1`), the exact posterior variance in that direction reaches `1.25e13` at `b = 1.1`
+  against `0.64` when it is observed - a factor of `1.9e13` - while the ESS stays healthy at 50-65.
+  The divergence is in the **posterior itself**, not its particle approximation, so no filter can
+  repair it. This refines Part 2: `M < d` is the regime where crossing the threshold turns large
+  uncertainty into *unbounded* uncertainty.
+- **Stability is a property of `F`'s eigenvalues, not its entries.** At `d = 4` with
+  `coupling = 0.3` and `rho(F) = 1.1`, every entry of `F` is `0.7405` or smaller and the state still
+  reaches `1.6e8`. You cannot read stability off the diagonal.
+- **Coupling changes how many directions cross the threshold, not what crossing costs.** At
+  `b = 1.1`, `d = 2`: diagonal `F` has 2 of 2 directions explosive, coupled `F` has 1 of 2. The
+  relative-gap penalty is `1.163` versus `1.106`.
+- **The error is flat in time at and just above the threshold.** Over `T = 2000` at
+  `b = 0.9, 1.0, 1.01` the half-run ratios are `0.988`, `0.960`, `0.987`, with drift negative in all
+  three. Stated carefully: the error is **bounded in mean over the horizons tested** - a finite-`T`,
+  in-mean statement, weaker than time-uniform stability in the almost-sure sense.
+- **Degeneracy and accumulation are independent failure modes.** At `d = 4`, `M = 16` the minimum ESS
+  is `1.0` and resampling fires at all 2000 steps - the posterior carried by a single particle - and
+  the half-run ratio is still `1.075`. A cloud running on one effective particle is inaccurate but
+  not diverging. *(Closes a gap in Part 3, which ran long horizons only at small `(d, M)`.)*
+
+### Two numerical traps, documented rather than avoided
+
+- **`stationary_covariance` fails silently above the threshold.** It solves `P = F P F' + Q`, which
+  has no solution when `rho(F) >= 1`. At `b = 1.0` it raises `LinAlgError`; at `b = 1.01` and `1.1`
+  it returns a **negative variance** and raises nothing. Do not call it for `b >= 1`.
+- **Apparent error growth at long horizons is floating-point cancellation, not instability.** At
+  `b = 1.1`, `T = 2000` the state reaches `1e83` and the measured gap is `9.9e66` - matching the
+  cancellation floor `|x|*eps = 4.1e67` almost exactly. Run naively, the experiment reports error
+  growing by sixty-six orders of magnitude: a convincing false positive. The usable horizon obeys
+  `b^T <~ 1e10`, so long runs near `b = 1` and short runs further out; `b = 1.1` is safe only to
+  `T ~ 241`. Section 8 of the notebook measures this instead of hiding it.
+
+### Limitations
+
+Only `Q = R = I` was tested, so the insensitivity above depends on the observations being
+informative at every step. Section 9 used a single unobserved direction at `d = 2`. Section 7b used
+only 4 seeds, and its `d = 16` ratio of `1.104` is within noise of the others. And `b` and `T`
+cannot both be pushed, so nothing here says what happens at `b = 1.1` beyond `T ~ 241`.
+
 ---
 
 ## Next steps
 
 Items 1-3 of the original plan (long horizons, many-dataset error bars, better proposals) are **done
-in Part 3**. What genuinely remains:
+in Part 3**; varying `F` across the stability threshold is **done in Part 5**. What genuinely
+remains:
 
 1. **Sequential Quasi-Monte Carlo (SQMC).** The `O(1/sqrt(N))` rate confirmed in every regime is the
    fundamental limit of plain Monte Carlo. SQMC replaces random draws with low-discrepancy points
@@ -242,7 +316,16 @@ in Part 3**. What genuinely remains:
    approximated, so how much of the rescue survives is an open question.
 4. **Error bars on the rest of Part 2.** Part 3 re-examined one single-dataset claim and it needed
    correcting; the others deserve the same treatment.
-5. **Close the Part 4 controls.** Run the shape-fixed control (a Gaussian filter at the Student-t's
+5. **Map the detectability boundary (from Part 5).** Part 5 Section 9 shows the posterior becomes
+   unbounded when an explosive direction is never observed, in a single case. Sweeping `M` from 1 to
+   `d` at fixed `b > 1` would measure how much observation is enough to keep it bounded.
+6. **A de-trended formulation for explosive long runs (from Part 5).** Filtering `z_t = F^-t x_t`, or
+   working in log scale, would make `b = 1.1` at `T = 2000` measurable instead of losing it to
+   floating-point cancellation.
+7. **Does the optimal proposal help where the posterior is unbounded?** Part 3's rescue fixes the
+   large-`M` collapse. Part 5 Section 9 suggests it would *not* help with unbounded posterior
+   uncertainty, since that is not a proposal problem - a clean negative result if confirmed.
+8. **Close the Part 4 controls.** Run the shape-fixed control (a Gaussian filter at the Student-t's
    scale) and the random-walk variant, and establish whether the worst case at intermediate `nu`
    can be located analytically. See the Part 4 section above.
 
