@@ -101,15 +101,13 @@ recursion at all.
   the unmeasured coordinates (`2.6x` the error of measured ones), but there is **no ESS collapse** —
   the cloud is in fact *healthier* here (min ESS `83`) than in the other regimes. What makes `M < d`
   hard is irreducible uncertainty in directions the data never sees, not particle degeneracy.
-- **Weight degeneracy is driven by `M`, not by `d`.** This was the clearest result. Growing `d` from
-  `1` to `16` with `M = 1` left the cloud healthy throughout (min ESS never below `~90`, mean ESS
-  pinned near `530`) and the relative gap crept only from `0.033` to `0.064` before flattening.
-  Growing `M` from `1` to `16` with `d = 4` drove the minimum ESS from `94` down to `1.3`, forced
-  resampling at every single step, and quadrupled the relative gap to `0.22`.
-- **More information can make the particle filter worse.** Adding observations sharpens the
-  likelihood, and a sharper likelihood is harder for particles proposed from the prior to satisfy.
-  So `M > d` makes the *exact posterior* tighter while making the *particle cloud* sicker — the
-  hypothesis recorded at the end of Part 1, now confirmed empirically.
+- **Weight degeneracy is driven by the sharpness of the likelihood, which here is controlled by
+  `M`.** This was the clearest result. Growing `d` from `1` to `16` with `M = 1` left the cloud
+  healthy throughout (min ESS never below `~90`, mean ESS pinned near `530`) and the relative gap
+  crept only from `0.033` to `0.064` before flattening. Growing `M` from `1` to `16` with `d = 4`
+  drove the minimum ESS from `94` down to `1.3`, forced resampling at every single step, and
+  quadrupled the relative gap to `0.22`. A sharper likelihood is harder for particles proposed from
+  the prior to satisfy, which is the mechanism behind both this and the `M > d` result above.
 
 ### Summary table (N = 1000, T = 100)
 
@@ -122,6 +120,22 @@ recursion at all.
 "Relative gap" is the mean gap divided by the exact posterior's own spread — Monte Carlo error as a
 fraction of the uncertainty that is genuinely there. Being dimensionless, it is the only one of
 these numbers that compares fairly across regimes.
+
+> **Correction (added after Part 5).** Two earlier claims in this section have been withdrawn:
+> that degeneracy is driven by `M` "not by `d`", and that *more information can make the particle
+> filter worse*. Under a Gaussian likelihood the `M` observations reduce to a `d`-dimensional
+> sufficient statistic (Del Moral & Gerber, 2026, Section 5.3.3), so growing `M` raises the
+> observation's **precision** and never its effective dimension: the `M = 4` case above is the same
+> model as `d = M = 2` with `R = 0.5*I` (each coordinate is measured twice, and averaging two
+> independent measurements halves the noise variance). The experiment therefore separates
+> *sharpness* from `d`, not *dimension* from `d`. The table also does not show the filter doing
+> worse: from `M = d` to `M > d` the mean gap **falls** (`0.0371` -> `0.0297`) and the relative gap
+> is flat; only the ESS drops, which is not the same thing.
+>
+> The ESS collapse itself is real and reproducible — only its attribution changes. Two consequences:
+> the cleanest way to study the effect is to vary `r` directly at `M = d`, since the `M` sweep only
+> reaches `r_eff = r*d/M`; and the original claim **should** hold under a **Student-t likelihood**,
+> where the discarded component stays inside the weights instead of cancelling.
 
 ---
 
@@ -344,3 +358,6 @@ Society: Series B, 77(3), 509–579.
 
 Doucet, A., Godsill, S. & Andrieu, C. (2000). *On sequential Monte Carlo sampling methods for
 Bayesian filtering.* Statistics and Computing, 10(3), 197–208.
+
+Del Moral, P. & Gerber, M. (2026). *A perturbation theory for Feynman-Kac models and their particle
+interpretations.* arXiv:2610.21587. — Section 5.3.3 is the basis of the Part 2 correction above.
