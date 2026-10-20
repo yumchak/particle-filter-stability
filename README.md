@@ -14,7 +14,7 @@ filter accuracy directly instead of guessing at it.
 
 **Part 1** establishes the method in one dimension. **Part 2** extends it to many dimensions and
 asks which dimension actually hurts. **Part 3** stress-tests Part 2's conclusions — over longer
-horizons, across many datasets, and against a smarter filter. **Part 2b** repeats Part 2 at the stability
+horizons, across many datasets, and against a smarter filter. **Part 1b** and **Part 2b** repeat Parts 1 and 2 at the stability
 threshold `rho(F) = 1` to test whether the stable/unstable regime matters. **Part 4** returns to one
 dimension to test a conjecture from Dr Gerber: that a particle filter run with Student-t state noise should be
 less stable than a Gaussian one when the observations are unbounded. **Part 5** varies the state
@@ -26,6 +26,7 @@ decaying and starts to explode.
 | File | Contents |
 |---|---|
 | `01_kf_pf_1d_comparison.ipynb` | **Part 1.** The 1D Kalman-vs-particle-filter study: simulation, both filters, the PF–KF comparison, stability over time and `N`, ESS and resampling, and a nonlinear example. |
+| `01b_kf_pf_1d_rho1.ipynb` | **Part 1b.** Part 1 re-run at `b = 1` (the threshold) instead of `0.9`. Shows the 1D fully-observed case is unaffected, and that Part 1's "the model forgets" explanation of its flat error curves was not the real mechanism. |
 | `02_md_dimension_study.ipynb` | **Part 2.** The multidimensional study: the three `M` vs `d` regimes, side-by-side comparison, and dimension scaling. |
 | `02b_md_dimension_rho1.ipynb` | **Part 2b.** Part 2 re-run at `rho(F) = 1` instead of `0.9`, with everything else identical. Answers whether the stable/unstable regime matters for the `M` vs `d` results. |
 | `03_robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. |
@@ -34,7 +35,7 @@ decaying and starts to explode.
 | `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 
-The notebooks are numbered in reading order, and all six are committed **with their outputs**, so
+The notebooks are numbered in reading order, and all seven are committed **with their outputs**, so
 every plot and number renders on GitHub without running anything. Part 5 needs no additions to
 `filters.py`: the spectral radius is already a parameter of `build_model`, reachable through
 `run_case(d, M, b=..., coupling=...)`.
@@ -65,6 +66,49 @@ Parameters: `b = 0.9`, `a = 1.0`, `Q = 1.0`, `R = 1.0`, `T = 100`, seed `= 42`.
   Kalman solution exists. Squaring hides the sign of the state, so the posterior is genuinely
   **bimodal** — a shape no Gaussian filter can represent. The posterior mean is consequently
   uninformative, while the estimate of `|x_t|` tracks the truth and cuts error 56% below baseline.
+
+---
+
+# Part 1b: The 1D study at the threshold (`b = 1`)
+
+Part 1 re-run with one number changed: `b = 1` instead of `0.9`. In one dimension `b` is the
+spectral radius, so this is a random walk — no decay, no stationary distribution, nothing forgotten.
+
+### Nothing of substance changes
+
+| | `b = 0.9` | `b = 1` |
+|---|---|---|
+| KF steady-state variance | 0.5974 | 0.6180 |
+| mean PF-KF gap | 0.02721 | 0.02688 |
+| fitted `O(1/sqrt(N))` slope | -0.4934 | -0.4922 |
+| half-run error ratios | 1.019 / 1.102 / 1.074 | 1.073 / 1.065 / 1.072 |
+| mean ESS | 531.1 | 524.4 |
+| **state standard deviation** | **1.83** | **2.98** |
+
+The state's spread grew by 63% and lost its stationary distribution; the filter's uncertainty grew
+by 3.4%.
+
+### Part 1's explanation of its own result was wrong
+
+Part 1 attributed its flat error curves to forgetting: `b < 1` means old states, and therefore old
+errors, decay geometrically. At `b = 1` nothing decays and **the error is just as flat**. So
+geometric forgetting of the state was not the mechanism.
+
+What bounds the filter is that an observation arrives every step. The variance recursion
+`P -> (1 - Ka)(b^2 P + Q)` has a bounded fixed point whether or not `b < 1`, because the update
+always shrinks. The state may wander arbitrarily far; the filter's uncertainty about *where it is*
+does not grow, because it is told, every step, to within `sqrt(R)`.
+
+This is the fully-observed, one-dimensional case of the pattern in Parts 2b and 5: crossing the
+threshold costs nothing when the observations constrain the state.
+
+### A normalisation trap worth knowing
+
+Two figures look like improvements and are not — the gap as a percentage of the signal
+(1.49% -> 0.90%) and the nonlinear section's improvement over baseline (56% -> 72%). Both divide by
+the state's own spread, which grew 63% while the numerators stayed put. **Any metric normalised by
+the state is unreliable across the threshold.** The relative gap used from Part 2 onwards divides by
+the *posterior* spread and is unaffected.
 
 ---
 
