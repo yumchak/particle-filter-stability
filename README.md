@@ -14,8 +14,9 @@ filter accuracy directly instead of guessing at it.
 
 **Part 1** establishes the method in one dimension. **Part 2** extends it to many dimensions and
 asks which dimension actually hurts. **Part 3** stress-tests Part 2's conclusions — over longer
-horizons, across many datasets, and against a smarter filter. **Part 4** returns to one dimension to
-test a conjecture from Dr Gerber: that a particle filter run with Student-t state noise should be
+horizons, across many datasets, and against a smarter filter. **Part 2b** repeats Part 2 at the stability
+threshold `rho(F) = 1` to test whether the stable/unstable regime matters. **Part 4** returns to one
+dimension to test a conjecture from Dr Gerber: that a particle filter run with Student-t state noise should be
 less stable than a Gaussian one when the observations are unbounded. **Part 5** varies the state
 transition matrix `F` across the stability threshold `rho(F) = 1`, where the hidden state stops
 decaying and starts to explode.
@@ -26,13 +27,14 @@ decaying and starts to explode.
 |---|---|
 | `01_kf_pf_1d_comparison.ipynb` | **Part 1.** The 1D Kalman-vs-particle-filter study: simulation, both filters, the PF–KF comparison, stability over time and `N`, ESS and resampling, and a nonlinear example. |
 | `02_md_dimension_study.ipynb` | **Part 2.** The multidimensional study: the three `M` vs `d` regimes, side-by-side comparison, and dimension scaling. |
+| `02b_md_dimension_study_rho1.ipynb` | **Part 2b.** Part 2 re-run at `rho(F) = 1` instead of `0.9`, with everything else identical. Answers whether the stable/unstable regime matters for the `M` vs `d` results. |
 | `03_robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. |
 | `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, tested in ordinary data and under very large observations. |
 | `05_f_stability_threshold.ipynb` | **Part 5.** Varies the spectral radius of `F` across the stability threshold, in 1D and in `d` dimensions, with and without coupling: accuracy, cloud health, long-run behaviour, and what happens when an explosive direction is never observed. |
 | `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 
-The notebooks are numbered in reading order, and all five are committed **with their outputs**, so
+The notebooks are numbered in reading order, and all six are committed **with their outputs**, so
 every plot and number renders on GitHub without running anything. Part 5 needs no additions to
 `filters.py`: the spectral radius is already a parameter of `build_model`, reachable through
 `run_case(d, M, b=..., coupling=...)`.
@@ -136,6 +138,49 @@ these numbers that compares fairly across regimes.
 > the cleanest way to study the effect is to vary `r` directly at `M = d`, since the `M` sweep only
 > reaches `r_eff = r*d/M`; and the original claim **should** hold under a **Student-t likelihood**,
 > where the discarded component stays inside the weights instead of cancelling.
+
+---
+
+# Part 2b: The same study at the stability threshold (`rho(F) = 1`)
+
+Part 2 re-run with **one parameter changed**: `rho(F) = 1` instead of `0.9`. Same `Q`, `R`,
+`coupling = 0.3`, seeds, horizons and particle counts; Part 2 itself is untouched. Every section
+carries a **Compared with Part 2** box giving the same metric at both spectral radii.
+
+This answers Dr Gerber's question: does the stable versus unstable regime matter for the `M` vs `d`
+results?
+
+### Answer: yes, but only where the observations fail to constrain the state
+
+| | `rho = 0.9` | `rho = 1` | |
+|---|---|---|---|
+| `M = d` relative gap | 0.0495 | 0.0515 | unchanged |
+| `M > d` relative gap | 0.0502 | 0.0582 | unchanged |
+| **`M < d` relative gap** | 0.0568 | **0.0875** | **+54%** |
+| `M < d`, unmeasured/measured error | `2.6x` | **`3.45x`** | worse |
+| rel gap at `d = 16`, `M = 1` | 0.064 | **0.110** | roughly doubles |
+| rel gap at `d = 16`, `M = 1`, no coupling | saturating | **0.198** | worst case |
+| min ESS, `M: 1 -> 16` | `94 -> 1.3` | `82 -> 1.5` | identical |
+| fitted `O(1/sqrt(N))` slopes | `-0.512 / -0.520 / -0.507` | `-0.519 / -0.522 / -0.483` | survives |
+
+Every effect that worsens involves a direction the observations do not constrain. At `rho < 1` an
+unobserved coordinate still forgets its past, so its uncertainty settles at a finite stationary
+value; at `rho = 1` it forgets nothing and the uncertainty grows without bound. Fully observed
+(`M >= d`), crossing the threshold costs essentially nothing — the observations alone keep the
+posterior bounded.
+
+Two further notes:
+
+- **`stationary_covariance` cannot be used here.** It solves `P = F P F' + Q`, which has no solution
+  at `rho(F) >= 1`. Part 2's Section 4 used it as the "no data" reference; Part 2b replaces it with
+  the finite-horizon prior variance, which is well defined at any spectral radius.
+- **Flatness in time is less clear.** Half-run error ratios are `1.225`, `1.181`, `0.988`, against
+  ratios within a few percent of 1 at `rho = 0.9`. One dataset and ten seeds is not enough to call
+  this, and it is exactly what a longer horizon is needed to settle.
+
+This matches the finding reached independently in Part 5: an explosive but *observed* direction
+leaves the posterior bounded, while an explosive *unobserved* one does not. What bounds the filter
+is detectability, not stability.
 
 ---
 
