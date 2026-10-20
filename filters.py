@@ -448,8 +448,10 @@ def build_model(d, M, b=0.9, q=1.0, r=1.0, coupling=0.3,
     base = np.eye(d)
     if d > 1 and coupling != 0.0:
         base = base + coupling * (np.eye(d, k=1) + np.eye(d, k=-1))
-    spectral_radius = np.max(np.abs(np.linalg.eigvals(base)))
-    F = b * base / spectral_radius
+    # rho(base), the spectral radius of the UNSCALED base matrix. Dividing by it
+    # and multiplying by b gives rho(F) = b exactly, since rho(cA) = |c| rho(A).
+    rho_base = np.max(np.abs(np.linalg.eigvals(base)))
+    F = b * base / rho_base
 
     Q = q * np.eye(d)
     R = r * np.eye(M)
