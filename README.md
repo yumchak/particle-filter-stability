@@ -14,7 +14,7 @@ filter accuracy directly instead of guessing at it.
 
 **Part 1** establishes the method in one dimension. **Part 2** extends it to many dimensions and
 asks which dimension actually hurts. **Part 3** stress-tests Part 2's conclusions — over longer
-horizons, across many datasets, and against a smarter filter. **Part 1b** and **Part 2b** repeat Parts 1 and 2 at the stability
+horizons, across many datasets, and against a smarter filter. **Parts 1b, 2b and 4b** repeat Parts 1, 2 and 4 at the stability
 threshold `rho(F) = 1` to test whether the stable/unstable regime matters. **Part 4** returns to one
 dimension to test a conjecture from Dr Gerber: that a particle filter run with Student-t state noise should be
 less stable than a Gaussian one when the observations are unbounded. **Part 5** varies the state
@@ -31,11 +31,12 @@ decaying and starts to explode.
 | `02b_md_dimension_rho1.ipynb` | **Part 2b.** Part 2 re-run at `rho(F) = 1` instead of `0.9`, with everything else identical. Answers whether the stable/unstable regime matters for the `M` vs `d` results. |
 | `03_robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. |
 | `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, tested in ordinary data and under very large observations. |
+| `04b_student_t_rho1.ipynb` | **Part 4b.** Part 4 re-run at `b = 1`. The random-walk variant Part 4 said it had not run: observations do become large, and it still makes no difference -- the dial is the innovation, not the observation level. |
 | `05_f_stability_threshold.ipynb` | **Part 5.** Varies the spectral radius of `F` across the stability threshold, in 1D and in `d` dimensions, with and without coupling: accuracy, cloud health, long-run behaviour, and what happens when an explosive direction is never observed. |
 | `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 
-The notebooks are numbered in reading order, and all seven are committed **with their outputs**, so
+The notebooks are numbered in reading order, and all eight are committed **with their outputs**, so
 every plot and number renders on GitHub without running anything. Part 5 needs no additions to
 `filters.py`: the spectral radius is already a parameter of `build_model`, reachable through
 `run_case(d, M, b=..., coupling=...)`.
@@ -303,6 +304,12 @@ particle filter reproduces Part 1 **bit for bit** when its noise is Gaussian.
 - **It is robust across datasets.** On 12 independent datasets the Student-t filters are worse than
   the Gaussian in **12 out of 12** (`nu = 5`, median `11x`; `nu = 3`, median `21x`), and the Cauchy
   is better in **12 out of 12** (median `0.08x`).
+- **The worst case sits at `nu ~ 10`.** Sweeping `nu` from 1 to 500 at `y* = 20` and `y* = 50`
+  gives an interior maximum at `nu ~ 10` in both cases -- about `3.2x` the Gaussian's log-likelihood
+  RMSE -- after which the curve falls monotonically back to the Gaussian, as it must. So the honest
+  statement is not "heavier tails are less stable" but **"tails heavy enough to move the filter's
+  target, but not heavy enough for its particles to follow, are less stable"**, and that band is
+  narrow and interior.
 - **But it is not monotonic in `nu` — the Cauchy is the most stable of all.** Heavier tails move the
   filter's own target further out (harder to represent) but also let particles reach further (easier
   to sample). At `y* = 20` the typical furthest of 1000 particles reaches `3.4` (Gaussian), `7.4`
@@ -319,15 +326,65 @@ and it is invisible on in-model data.
 - **The scale/shape control is incomplete.** Variance-matching the Student-t rules out "it is simply
   wider", but a Gaussian filter run at the Student-t's reduced scale is still needed to separate
   scale from tail shape properly.
-- **"Unbounded" may be the wrong dial.** What drives the behaviour is the size of the *innovation*,
-  not the level of the observation. A random-walk variant (`b = 1`), where observations reach the
-  seventies, would test this directly; it has not been run.
+- **"Unbounded" was the wrong dial — now settled in Part 4b.** What drives the behaviour is the
+  size of the *innovation*, not the level of the observation. The random-walk variant (`b = 1`) has
+  now been run: observations reach `319` over `10^5` steps against `11.67` at `b = 0.9`, and the
+  filters still show **no difference at all**. A random walk carries the filter along with it, so
+  each observation is no more surprising than the last. See Part 4b.
 - **The single-observation probe is artificial.** It measures the response to an arbitrarily large
   innovation, which in-model data will not supply. Whether this is the formulation Dr Gerber
   intended is the main question for the next meeting.
 - On the filtering *mean* (rather than the likelihood), the `nu = 3` result does not survive the
   multi-dataset check (`7.41` against the Gaussian's `7.35`); only `nu = 5` (worse) and `nu = 1`
   (better) separate reliably there.
+
+
+---
+
+# Part 4b: Student-t at the threshold (`b = 1`) — the random-walk variant
+
+Part 4 re-run with `b = 1`. This is the experiment Part 4's open questions said had not been run:
+with a random-walk state the observations should become large on their own, so the conjecture's
+condition ("if the observations are unbounded") might be met without an artificial outlier.
+
+### The observations do become large
+
+| `T` | `max|y|` at `b = 0.9` | at `b = 1` |
+|---|---|---|
+| 100 | 4.56 | 11.82 |
+| 1,000 | 9.73 | 55.45 |
+| 10,000 | 10.88 | 129.61 |
+| 100,000 | 11.67 | **319.31** |
+
+A factor of 27, and far past the artificial `y* = 20` and `y* = 50` probes.
+
+### And it still makes no difference
+
+Section 3 runs to `T = 2000`, where `max|y| ~ 55`, and finds every filter from Gaussian to Cauchy
+with the same approximation error (`0.028`-`0.031`), flat in time.
+
+**So the level of the observation is not the dial. The innovation is.** A random walk carries the
+filter along with it, so however far the state travels each new observation is about as surprising
+as the last -- the "in sd units" column sits at `3.6`-`4.2` at both spectral radii, while the raw
+maximum grows 27-fold. Unbounded observations in the ordinary sense are not sufficient; an unbounded
+*surprise* is needed, and in-model data will not supply one at any `rho(F) <= 1`.
+
+This is a negative result and a useful one: Part 4's single-outlier probe is not just convenient, it
+appears to be **necessary** to reach the regime the conjecture concerns.
+
+### Everything else is unchanged, but noisier
+
+| | `b = 0.9` | `b = 1` |
+|---|---|---|
+| approximation error, in-model | `~0.028` | `0.028`-`0.031` |
+| error at `y* = 20`, Gaussian | 8.86 | 8.63 |
+| error at `y* = 20`, `nu = 5` | 15.07 | 13.98 |
+| `Var(log p)` vs Gaussian, `nu = 5` | `10.3x` | `9.7x` |
+| worst case over `nu` | `nu = 10` | `nu = 7`-`10` |
+
+The 12-dataset confidence intervals are roughly three times wider at `b = 1`: with a random-walk
+state each dataset explores a different region, so the same experiment has substantially more
+spread. Worth knowing before designing any longer run at this spectral radius.
 
 
 # Part 5: Crossing the stability threshold (`rho(F)` vs 1)
@@ -428,9 +485,10 @@ remains:
 7. **Does the optimal proposal help where the posterior is unbounded?** Part 3's rescue fixes the
    large-`M` collapse. Part 5 Section 9 suggests it would *not* help with unbounded posterior
    uncertainty, since that is not a proposal problem - a clean negative result if confirmed.
-8. **Close the Part 4 controls.** Run the shape-fixed control (a Gaussian filter at the Student-t's
-   scale) and the random-walk variant, and establish whether the worst case at intermediate `nu`
-   can be located analytically. See the Part 4 section above.
+8. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
+   located empirically at `nu ~ 10` (Part 4 Section 8). What remains is the shape-fixed control --
+   a Gaussian filter run at the Student-t's reduced scale -- and whether the `nu ~ 10` location can
+   be derived rather than measured.
 
 ## Running it
 
