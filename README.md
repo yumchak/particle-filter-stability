@@ -34,11 +34,14 @@ decaying and starts to explode.
 | `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, tested in ordinary data and under very large observations. |
 | `04b_student_t_rho1.ipynb` | **Part 4b.** Part 4 re-run at `b = 1`. The random-walk variant Part 4 said it had not run: observations do become large, and it still makes no difference -- the dial is the innovation, not the observation level. |
 | `05_f_stability_threshold.ipynb` | **Part 5.** Varies the spectral radius of `F` across the stability threshold, in 1D and in `d` dimensions, with and without coupling: accuracy, cloud health, long-run behaviour, and what happens when an explosive direction is never observed. |
+| `06_long_horizons.ipynb` | **Part 6.** How the error grows with `T`, up to `10^6`. Tracks the **maximum** error across decades rather than comparing halves of one run, because a half-run ratio cannot resolve `sqrt(log T)` growth and gets worse as `T` grows. *Built, not yet run.* |
+| `07_student_t_likelihood.ipynb` | **Part 7.** Student-t observation likelihood with `M > d`, and the `d`-dimensional projection experiment. *Placeholder — planned for reading week.* |
 | `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 
-The notebooks are numbered in reading order, and all nine are committed **with their outputs**, so
-every plot and number renders on GitHub without running anything. Part 5 needs no additions to
+The notebooks are numbered in reading order. Parts 1-5 and the `b` variants are committed **with
+their outputs**, so every plot and number renders on GitHub without running anything. Part 6 is
+built but not yet run, and Part 7 is a placeholder. Part 5 needs no additions to
 `filters.py`: the spectral radius is already a parameter of `build_model`, reachable through
 `run_case(d, M, b=..., coupling=...)`.
 
@@ -527,18 +530,23 @@ remains:
 3. **Optimal proposals beyond the linear-Gaussian case.** Part 3's rescue relies on a closed form
    that only exists because the model is linear-Gaussian. In a nonlinear model the proposal must be
    approximated, so how much of the rescue survives is an open question.
-4. **Error bars on the rest of Part 2.** Part 3 re-examined one single-dataset claim and it needed
+4. **The long-horizon measurement itself (Part 6, built not run).** A full run takes about 29
+   minutes; `QUICK = True` gives a two-minute smoke test. A single-seed preview at `d = 4`, `M = 2`,
+   `rho = 0.9` had `max_gap` going `0.879 -> 1.396 -> 1.739` as `T` went `1e4 -> 1e5 -> 1e6` while
+   `mean_gap` stayed at `0.087`, which is faster than the `1.23x` that `sqrt(log T)` predicts over
+   that range -- but that is one seed, and measuring it properly is the point of Part 6.
+5. **Error bars on the rest of Part 2.** Part 3 re-examined one single-dataset claim and it needed
    correcting; the others deserve the same treatment.
-5. **Map the detectability boundary (from Part 5).** Part 5 Section 9 shows the posterior becomes
+6. **Map the detectability boundary (from Part 5).** Part 5 Section 9 shows the posterior becomes
    unbounded when an explosive direction is never observed, in a single case. Sweeping `M` from 1 to
    `d` at fixed `b > 1` would measure how much observation is enough to keep it bounded.
-6. **A de-trended formulation for explosive long runs (from Part 5).** Filtering `z_t = F^-t x_t`, or
+7. **A de-trended formulation for explosive long runs (from Part 5).** Filtering `z_t = F^-t x_t`, or
    working in log scale, would make `b = 1.1` at `T = 2000` measurable instead of losing it to
    floating-point cancellation.
-7. **Does the optimal proposal help where the posterior is unbounded?** Part 3's rescue fixes the
+8. **Does the optimal proposal help where the posterior is unbounded?** Part 3's rescue fixes the
    large-`M` collapse. Part 5 Section 9 suggests it would *not* help with unbounded posterior
    uncertainty, since that is not a proposal problem - a clean negative result if confirmed.
-8. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
+9. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
    located empirically at `nu ~ 10` (Part 4 Section 8). What remains is the shape-fixed control --
    a Gaussian filter run at the Student-t's reduced scale -- and whether the `nu ~ 10` location can
    be derived rather than measured.
