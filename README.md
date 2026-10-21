@@ -14,7 +14,7 @@ filter accuracy directly instead of guessing at it.
 
 **Part 1** establishes the method in one dimension. **Part 2** extends it to many dimensions and
 asks which dimension actually hurts. **Part 3** stress-tests Part 2's conclusions — over longer
-horizons, across many datasets, and against a smarter filter. **Parts 1b, 2b and 4b** repeat Parts 1, 2 and 4 at the stability
+horizons, across many datasets, and against a smarter filter. **Parts 1b, 2b, 3b and 4b** repeat Parts 1-4 at the stability
 threshold `rho(F) = 1` to test whether the stable/unstable regime matters. **Part 4** returns to one
 dimension to test a conjecture from Dr Gerber: that a particle filter run with Student-t state noise should be
 less stable than a Gaussian one when the observations are unbounded. **Part 5** varies the state
@@ -30,13 +30,14 @@ decaying and starts to explode.
 | `02_md_dimension_study.ipynb` | **Part 2.** The multidimensional study: the three `M` vs `d` regimes, side-by-side comparison, and dimension scaling. |
 | `02b_md_dimension_rho1.ipynb` | **Part 2b.** Part 2 re-run at `rho(F) = 1` instead of `0.9`, with everything else identical. Answers whether the stable/unstable regime matters for the `M` vs `d` results. |
 | `03_robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. |
+| `03b_robustness_rho1.ipynb` | **Part 3b.** Part 3 re-run at `rho(F) = 1`. Confirms the error stays flat over `T = 2000`, puts the `M < d` penalty at 69% over 30 datasets, and shows the optimal proposal removes the degeneracy but not the threshold penalty. |
 | `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, tested in ordinary data and under very large observations. |
 | `04b_student_t_rho1.ipynb` | **Part 4b.** Part 4 re-run at `b = 1`. The random-walk variant Part 4 said it had not run: observations do become large, and it still makes no difference -- the dial is the innovation, not the observation level. |
 | `05_f_stability_threshold.ipynb` | **Part 5.** Varies the spectral radius of `F` across the stability threshold, in 1D and in `d` dimensions, with and without coupling: accuracy, cloud health, long-run behaviour, and what happens when an explosive direction is never observed. |
 | `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 
-The notebooks are numbered in reading order, and all eight are committed **with their outputs**, so
+The notebooks are numbered in reading order, and all nine are committed **with their outputs**, so
 every plot and number renders on GitHub without running anything. Part 5 needs no additions to
 `filters.py`: the spectral radius is already a parameter of `build_model`, reachable through
 `run_case(d, M, b=..., coupling=...)`.
@@ -260,6 +261,58 @@ gap degrades by a factor of 3.4 as `M` grows, while the optimal proposal's stays
 So the honest statement of Part 2's finding is not "large `M` breaks particle filters" but
 **"large `M` breaks filters that propose blindly from the prior"** — a fixable problem, not a
 fundamental barrier.
+
+---
+
+# Part 3b: Robustness at the threshold (`rho(F) = 1`)
+
+Part 3 re-run with `rho(F) = 1`. Same three stress tests -- long horizons, error bars over 30
+datasets, and a better proposal -- applied where the state is a random walk.
+
+### The three Part 3 claims hold
+
+| Part 3 claim | Verdict at the threshold |
+|---|---|
+| Error flat over `T = 2000` | **Confirmed.** Block ratios 1.034, 0.986, 1.031. |
+| Regimes distinguishable, `M < d` worst | **Confirmed and amplified** -- the penalty grows from 40% to **69%**. |
+| Degeneracy is a bootstrap-proposal property | **Confirmed**, with an addition below. |
+
+### It settles a question Part 2b raised
+
+2b's half-run error ratios at `T = 100` on one dataset were `1.225`, `1.181`, `0.988`, which looked
+like growth. At `T = 2000` with 8 seeds and block fitting the ratios sit within 3.4% of 1.
+**2b's apparent rise was noise.**
+
+### The `M < d` penalty is real, and not a proposal problem
+
+Over 30 datasets with non-overlapping intervals:
+
+| relative gap | `rho = 0.9` | `rho = 1` |
+|---|---|---|
+| `M = d` | 0.0552 | 0.0555 |
+| `M > d` | 0.0590 | 0.0594 |
+| **`M < d`** | 0.0775 | **0.0937** |
+| `M < d` penalty | 40% | **69%** |
+
+The locally optimal proposal fixes the large-`M` collapse completely (min ESS at `M = 16`: 1.5 to
+190, a factor of 129) but removes only part of the threshold penalty:
+
+| `M` (`d = 4`) | regime | optimal, `rho = 0.9` | optimal, `rho = 1` |
+|---|---|---|---|
+| 1 | `M < d` | 0.0401 | **0.0535** (+33%) |
+| 4 | `M = d` | 0.0427 | 0.0444 (+4%) |
+| 16 | `M > d` | 0.0387 | 0.0397 (+3%) |
+
+A better proposal places particles where the likelihood is; it cannot create information about
+directions the data never see. At `rho = 1` those directions no longer forget, so there is more
+missing information to be short of -- the same conclusion Part 5 Section 9 reaches by another route.
+
+### One thing worth watching
+
+The fitted drifts are all non-negative here (`+1.02`, `+2.12`, `+0.05`% per 1000 steps) where
+Part 3's were mixed in sign. Small, and three regimes is a small sample, but only a much longer
+horizon could dismiss it.
+
 
 # Part 4: Student-t vs Gaussian state noise
 
