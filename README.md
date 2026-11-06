@@ -34,14 +34,14 @@ decaying and starts to explode.
 | `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, tested in ordinary data and under very large observations. |
 | `04b_student_t_rho1.ipynb` | **Part 4b.** Part 4 re-run at `b = 1`. The random-walk variant Part 4 said it had not run: observations do become large, and it still makes no difference -- the dial is the innovation, not the observation level. |
 | `05_f_stability_threshold.ipynb` | **Part 5.** Varies the spectral radius of `F` across the stability threshold, in 1D and in `d` dimensions, with and without coupling: accuracy, cloud health, long-run behaviour, and what happens when an explosive direction is never observed. |
-| `06_long_horizons.ipynb` | **Part 6.** How the error grows with `T`, up to `10^6`. Tracks the **maximum** error across decades rather than comparing halves of one run, because a half-run ratio cannot resolve `sqrt(log T)` growth and gets worse as `T` grows. *Built, not yet run.* |
+| `06_long_horizons.ipynb` | **Part 6.** How the error grows with `T`, up to `10^6`. Tracks the **maximum** error across decades rather than comparing halves of one run. Finds the maximum grows `7-9x` while the mean grows `1.1x` -- the statistic, not the horizon, was what limited Parts 1-3b. |
 | `07_student_t_likelihood.ipynb` | **Part 7.** Student-t observation likelihood with `M > d`, and the `d`-dimensional projection experiment. *Placeholder — planned for reading week.* |
 | `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 
-The notebooks are numbered in reading order. Parts 1-5 and the `b` variants are committed **with
-their outputs**, so every plot and number renders on GitHub without running anything. Part 6 is
-built but not yet run, and Part 7 is a placeholder. Part 5 needs no additions to
+The notebooks are numbered in reading order. Parts 1-6 and the `b` variants are committed **with
+their outputs**, so every plot and number renders on GitHub without running anything. Part 7 is a
+placeholder. Part 5 needs no additions to
 `filters.py`: the spectral radius is already a parameter of `build_model`, reachable through
 `run_case(d, M, b=..., coupling=...)`.
 
@@ -512,6 +512,66 @@ cannot both be pushed, so nothing here says what happens at `b = 1.1` beyond `T 
 
 ---
 
+---
+
+# Part 6: Long horizons — how the error grows with `T`
+
+Dr Gerber asked for `T ~ 10^6` to be confident the error does not grow when `M < d`. The runs go to
+`10^6`, but the main finding is about the **measurement**, not the horizon.
+
+### The statistic was the binding constraint
+
+Over `T: 1e2 -> 1e6`:
+
+| | growth |
+|---|---|
+| **maximum** gap | **7.1x - 9.4x** |
+| **mean** gap | 1.06x - 1.16x |
+
+From `T = 1e4` onwards the mean is flat to three decimal places (`M = d` at `rho = 0.9` reads
+`0.0404`, `0.0400`, `0.0399` at `1e4`, `1e5`, `1e6`). Parts 1, 3 and 3b reported the mean and
+compared halves of a single run -- a design whose expected signal is `1.05` at `T = 2000` and
+*smaller* at `1e6`, against measured noise of about +/- 3%. **Those notebooks were not limited by
+running too short; they were measuring a quantity that does not move.**
+
+### The growth is logarithmic, not polynomial
+
+`(log T)^a` fits better than `T^b` in all six configurations (`R2 ~ 0.98-0.99` against `0.92-0.96`),
+so the worst-case error is not growing like a power of the horizon. The fitted `a` is `1.74-2.03`
+rather than `0.5`.
+
+**This is not a contradiction of the theory.** Section 7.5.1 of Del Moral & Gerber (2026) bounds the
+**Kolmogorov distance** between distributions, which is at most 1 by construction. What is measured
+here is the distance between posterior **means**, which is unbounded -- a collapsed particle cloud
+has small Kolmogorov distance however wrong its mean is. Testing the theorem itself needs the
+Kolmogorov distance against the exact Gaussian posterior, which is the natural next step.
+
+### The threshold matters only where the observations fall short
+
+At `T = 1e6`, `rho = 1` against `rho = 0.9`:
+
+| regime | max gap | mean gap |
+|---|---|---|
+| `M = d` | 1.341 -> 1.289 | +4% |
+| `M > d` | 1.260 -> 1.434 | +3% |
+| **`M < d`** | **1.739 -> 2.700 (+55%)** | **+37%** |
+
+The same pattern as Parts 1b, 2b, 3b and 5, now at a million steps.
+
+### More particles buy less in the worst case
+
+The maximum error decays like `N^-0.22` to `N^-0.36`, against the mean's `N^-0.5`, and the exponent
+weakens as `T` grows. At long horizons every configuration eventually hits a step with ESS near 1
+whatever `N` is; more particles delay that step without preventing it, and the error there is set by
+how far the state has travelled. A sixteenfold increase in `N` cut the mean error fourfold in
+Part 1; here it cuts the worst case by less than a factor of two.
+
+### Limitations
+
+Two seeds at `T = 1e6` and four at `1e5`, so the longest-horizon points are the noisiest and carry
+the most weight in the fitted exponent. One dataset per setting. And minimum ESS is itself an
+extreme-value statistic, so its fall with `T` is partly definitional.
+
 ## Next steps
 
 Items 1-3 of the original plan (long horizons, many-dataset error bars, better proposals) are **done
@@ -530,11 +590,12 @@ remains:
 3. **Optimal proposals beyond the linear-Gaussian case.** Part 3's rescue relies on a closed form
    that only exists because the model is linear-Gaussian. In a nonlinear model the proposal must be
    approximated, so how much of the rescue survives is an open question.
-4. **The long-horizon measurement itself (Part 6, built not run).** A full run takes about 29
-   minutes; `QUICK = True` gives a two-minute smoke test. A single-seed preview at `d = 4`, `M = 2`,
-   `rho = 0.9` had `max_gap` going `0.879 -> 1.396 -> 1.739` as `T` went `1e4 -> 1e5 -> 1e6` while
-   `mean_gap` stayed at `0.087`, which is faster than the `1.23x` that `sqrt(log T)` predicts over
-   that range -- but that is one seed, and measuring it properly is the point of Part 6.
+4. **Measure the Kolmogorov distance, not the mean distance (from Part 6).** Part 6 finds the
+   worst-case error growing like `(log T)^1.75`, well above the `sqrt(log T)` of Section 7.5.1 --
+   but on a different metric. The theorem bounds the Kolmogorov distance between the particle
+   approximation and its target, which is bounded by 1; Part 6 measures the distance between
+   posterior means, which is not. Computing the Kolmogorov distance between the weighted cloud and
+   the exact Gaussian posterior at each step would be a direct test, and is the natural follow-up.
 5. **Error bars on the rest of Part 2.** Part 3 re-examined one single-dataset claim and it needed
    correcting; the others deserve the same treatment.
 6. **Map the detectability boundary (from Part 5).** Part 5 Section 9 shows the posterior becomes
