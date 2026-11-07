@@ -608,7 +608,7 @@ def kalman_filter_md(y, F, Q, H, R, m0=None, P0=None):
 
 def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
                        ess_threshold=0.5, return_particles=False,
-                       proposal="bootstrap"):
+                       proposal="bootstrap", stat_fn=None, stat_every=1):
     """Bootstrap particle filter for the multidimensional model.
 
     Identical cycle to the scalar version -- propagate, weight, normalise,
@@ -647,6 +647,19 @@ def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
         Resample when ESS < ess_threshold * N. The usual N/2 rule.
     return_particles : bool
         Also return the full weighted cloud at every step.
+    stat_fn : callable or None
+        If given, called as `stat_fn(t, particles, weights)` once per step --
+        after weighting, BEFORE resampling, which is the cloud that actually
+        represents p(x_t | y_0:t) -- and its return value is collected into an
+        array. This exists so a per-step diagnostic can be computed on the fly
+        and the cloud then discarded: storing it for T = 10^6 and N = 1000
+        would need tens of gigabytes, while the statistic itself is a scalar.
+        It is passed views, not copies, so it must not modify its arguments.
+        It never touches the filter's RNG, so results with and without it are
+        bit-identical.
+    stat_every : int
+        Call `stat_fn` only every `stat_every` steps (default 1, every step).
+        Used to keep the diagnostic affordable on the longest runs.
     proposal : {"bootstrap", "optimal"}
         How particles are moved forward.
 
@@ -680,6 +693,8 @@ def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
     resampled : ndarray, shape (T,) -- whether resampling fired at each step
     particles_hist : ndarray, shape (T, N, d)  (only if return_particles)
     weights_hist   : ndarray, shape (T, N)     (only if return_particles)
+    stats          : ndarray, first axis = number of calls (only if stat_fn)
+        Appended last, after particles_hist/weights_hist if those are present.
     """
     y = np.atleast_2d(np.asarray(y, dtype=float))
     T = y.shape[0]
@@ -713,6 +728,7 @@ def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
     resampled = np.zeros(T, dtype=bool)
     particles_hist = np.zeros((T, N, d)) if return_particles else None
     weights_hist = np.zeros((T, N)) if return_particles else None
+    stats = [] if stat_fn is not None else None
 
     for t in range(T):
         if proposal == "bootstrap":
@@ -763,6 +779,10 @@ def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
             particles_hist[t] = particles
             weights_hist[t] = weights
 
+        # On-the-fly diagnostic on the pre-resampling cloud (see `stat_fn`).
+        if stats is not None and t % stat_every == 0:
+            stats.append(stat_fn(t, particles, weights))
+
         # --- 4. Resample only when the cloud has become unhealthy ---
         if ess[t] < ess_threshold * N:
             idx = systematic_resample(weights, rng)
@@ -770,9 +790,12 @@ def particle_filter_md(y, F, Q, H, R, N=1000, x0=None, seed=0,
             weights = np.full(N, 1.0 / N)
             resampled[t] = True
 
+    out = [est, ess, resampled]
     if return_particles:
-        return est, ess, resampled, particles_hist, weights_hist
-    return est, ess, resampled
+        out += [particles_hist, weights_hist]
+    if stats is not None:
+        out.append(np.asarray(stats))
+    return tuple(out)
 
 
 def exact_posterior_bruteforce(y, F, Q, H, R, m0=None, P0=None):
@@ -944,3 +967,135 @@ def run_case(d, M, N=1000, T=100, data_seed=42, pf_seed=0,
     }
     out.update(summarise_case(pf_est, kf_mean, kf_cov, ess))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Kolmogorov distance between the particle cloud and the exact posterior
+# (added for Part 8)
+#
+# Parts 1-6 all measure the same thing: the distance between the particle
+# filter's posterior MEAN and the Kalman filter's. That quantity is unbounded,
+# which matters, because Del Moral & Gerber (2026) Section 7.5.1 bounds a
+# different one -- the Kolmogorov distance between the particle approximation
+# and its target, which is a difference of two probabilities and therefore can
+# never exceed 1. Part 6 found the worst-case mean distance growing like
+# (log T)^1.75, well above that section's sqrt(log T), and had to note that the
+# comparison was between different metrics. These functions compute the metric
+# the theorem actually uses, so the comparison can be made properly.
+# ---------------------------------------------------------------------------
+
+# Zelen & Severo (Abramowitz & Stegun 26.2.17). Maximum absolute error
+# 7.5e-8, verified against math.erf in Part 8 Section 1. numpy has no erf and
+# scipy is not a dependency of this repo, so the approximation is used
+# deliberately: the distances measured below are of order 1e-3 to 1e-1, so an
+# error of 7.5e-8 is four to five orders of magnitude below the signal.
+_ZS_P = 0.2316419
+_ZS_C = (0.319381530, -0.356563782, 1.781477937, -1.821255978, 1.330274429)
+
+
+def normal_cdf(x):
+    """Standard normal CDF, vectorised over `x`.
+
+    Evaluated through the tail so that the large-|x| end stays accurate: the
+    formula approximates 1 - Phi(|x|) and the result is reflected, rather than
+    computing Phi directly and losing precision to cancellation.
+    """
+    x = np.asarray(x, dtype=float)
+    ax = np.abs(x)
+    t = 1.0 / (1.0 + _ZS_P * ax)
+    poly = t * (_ZS_C[0] + t * (_ZS_C[1] + t * (_ZS_C[2]
+                + t * (_ZS_C[3] + t * _ZS_C[4]))))
+    tail = np.exp(-0.5 * ax * ax) / np.sqrt(2.0 * np.pi) * poly
+    return np.where(x >= 0.0, 1.0 - tail, tail)
+
+
+def unit_directions(d, n_random=0, seed=0):
+    """Directions to project onto: the `d` coordinate axes, then `n_random` more.
+
+    The coordinate axes give the marginal Kolmogorov distance, one coordinate at
+    a time. The random directions are there to check that the answer is not an
+    artefact of looking only along the axes -- see Part 8 Section 3.
+
+    Returns an array of shape (d + n_random, d) with unit-norm rows.
+    """
+    dirs = [np.eye(d)]
+    if n_random > 0:
+        rng = np.random.default_rng(seed)
+        extra = rng.standard_normal((n_random, d))
+        extra /= np.linalg.norm(extra, axis=1, keepdims=True)
+        dirs.append(extra)
+    return np.vstack(dirs)
+
+
+def weighted_ks_vs_gaussian(particles, weights, m, P, dirs):
+    """Kolmogorov distance from a weighted particle cloud to N(m, P), by projection.
+
+    For a unit direction u, both laws are pushed forward onto the real line:
+    the cloud becomes the weighted empirical distribution of u'x_i, and the
+    exact posterior becomes the univariate N(u'm, u'Pu). The distance returned
+    is
+
+        max_u  sup_z | sum_i w_i 1{u'x_i <= z}  -  Phi((z - u'm) / sqrt(u'Pu)) |
+
+    over the rows u of `dirs`.
+
+    Two things make this cheap. Projecting a Gaussian onto a line leaves a
+    Gaussian whose mean and variance are u'm and u'Pu, so no multivariate
+    normal CDF is ever needed. And the supremum over z is attained at the
+    atoms, so it is a maximum over N points rather than a search: the empirical
+    CDF is a staircase that only moves there, and both one-sided limits at each
+    atom have to be checked, which is what the two `d1`/`d2` terms below do.
+
+    What this is and is not. Along a single direction this is exactly the
+    Kolmogorov distance between the two projected laws. Taken over the
+    coordinate axes it is the largest MARGINAL Kolmogorov distance, which is a
+    lower bound on the d-dimensional orthant version; taken over many
+    directions it approaches the supremum over half-spaces. All of them are
+    differences of probabilities, so all are bounded by 1 -- which is the
+    property that matters for Part 8, and the property the mean distance of
+    Parts 1-6 does not have.
+
+    Parameters
+    ----------
+    particles : ndarray, shape (N, d)
+    weights : ndarray, shape (N,)
+        Normalised weights, summing to 1.
+    m : ndarray, shape (d,)
+        Exact posterior mean (from the Kalman filter).
+    P : ndarray, shape (d, d)
+        Exact posterior covariance.
+    dirs : ndarray, shape (K, d)
+        Unit-norm directions to project onto; see `unit_directions`.
+
+    Returns
+    -------
+    float -- the distance, in [0, 1].
+    """
+    proj = particles @ dirs.T                                   # (N, K)
+    mu = dirs @ m                                               # (K,)
+    var = np.einsum("kj,jl,kl->k", dirs, P, dirs)               # u'Pu
+    sd = np.sqrt(np.maximum(var, 0.0))
+    # A direction with no spread under the exact posterior has no CDF to
+    # compare against; neutralise it rather than dividing by zero.
+    live = sd > 0.0
+    if not live.any():
+        return 0.0
+    safe_sd = np.where(live, sd, 1.0)
+
+    # Every direction is handled in one pass. Sorting each column of `proj`
+    # independently is what `argsort(axis=0)` does, so the whole K-direction
+    # calculation is a handful of array operations rather than a Python loop --
+    # worth it here because this runs once per time step, up to 10^6 times.
+    order = np.argsort(proj, axis=0)                            # (N, K)
+    ps = np.take_along_axis(proj, order, axis=0)                # sorted values
+    cum = np.cumsum(weights[order], axis=0)                     # F_N at the atoms
+    exact = normal_cdf((ps - mu) / safe_sd)
+
+    # The empirical CDF jumps at every atom, so both one-sided limits there
+    # have to be checked: `cum` is the value just after the jump, and `cum`
+    # shifted down by one (starting from 0) the value just before it.
+    prev = np.empty_like(cum)
+    prev[0] = 0.0
+    prev[1:] = cum[:-1]
+    gaps = np.maximum(np.abs(cum - exact), np.abs(prev - exact))   # (N, K)
+    return float(gaps[:, live].max())

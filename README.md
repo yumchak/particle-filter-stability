@@ -572,6 +572,93 @@ Two seeds at `T = 1e6` and four at `1e5`, so the longest-horizon points are the 
 the most weight in the fitted exponent. One dataset per setting. And minimum ESS is itself an
 extreme-value statistic, so its fall with `T` is partly definitional.
 
+# Part 8: The Kolmogorov distance — measuring what the theorem bounds
+
+Part 6 closed by saying the theorem and the experiment used different metrics. This notebook
+measures the one the theorem uses, on the same grid, so the comparison is like for like.
+
+The distance is `sup_z |F_cloud(z) - F_exact(z)|` along a direction, maximised over directions: a
+difference of two probabilities, so it can never exceed 1. `filters.py` gains `normal_cdf`,
+`unit_directions` and `weighted_ks_vs_gaussian`, plus a `stat_fn` hook on `particle_filter_md` that
+computes a per-step diagnostic and discards the cloud. That hook is what makes `T = 1e6` possible:
+storing the cloud would need about 16 GB, the statistic is 8 MB. With `stat_fn=None` the filter is
+bit-identical to the one used in Parts 1-6.
+
+### The metric was checked before it was used
+
+- `normal_cdf` against `math.erf`: max error `7.45e-8` (no scipy in this repo).
+- An exact sample of size `N` from the target: fitted slope `-0.5004`, with `D sqrt(N)` between
+  `0.985` and `1.035`. This also **calibrates** the metric -- `D ~ 1.017 / sqrt(N)` for an exact
+  sample.
+- A deliberately shifted target: measured matches the analytic supremum to within Monte Carlo noise
+  at all four shifts.
+- A single particle carrying all the weight scores exactly `0.5` at the posterior mean. **Any step
+  whose ESS collapses to ~1 scores at least 0.5**, which drives everything below.
+
+### The per-step error distribution is stationary
+
+Across ten blocks of a `1e6`-step run at `rho = 1` with `M < d`, last block over first:
+
+| mean | median | q90 | q99 | q99.9 | rate > 0.25 |
+|---|---|---|---|---|---|
+| 1.002 | 1.000 | 1.003 | 1.002 | 0.995 | 1.001 |
+
+Only the two rarest statistics move at all. The maximum at any horizon is then **predicted from the
+`(1 - 1/T)` quantile of that distribution, with nothing fitted**, to within 15% over four decades
+(`obs/pred` = 0.947, 1.149, 1.052, 0.951, 1.035). **The growth of the worst case is an
+extreme-value effect, not degradation** -- longer runs do not make the filter worse, they give more
+chances to observe the same rare bad step. This is the direct answer to Dr Gerber's question about
+`M < d` at long horizons.
+
+### Which statistic you report decides whether the theory appears to hold
+
+Growth over `T: 1e2 -> 1e6`, against `sqrt(log T)` = 1.732 on this range:
+
+| statistic | growth | fitted `(log T)^a` |
+|---|---|---|
+| mean | 1.00 - 1.07 | `a = -0.001 - 0.054` (no trend) |
+| **q99.9** | **1.46 - 2.31** | **`a = 0.346 - 0.714`** |
+| maximum | 2.95 - 4.00 | `a = 1.008 - 1.261` |
+| mean gap (Parts 1-6) | 1.03 - 1.11 | — |
+| max gap (Parts 1-6) | 5.71 - 8.69 | Part 6 reported 7.1 - 9.4 |
+
+The `q99.9` row brackets both `sqrt(log T)` and the `a = 0.5` of Section 7.5.1. Part 6's `a = 1.74 -
+2.03` on the maximum falls to `1.008 - 1.261` here, because at `T = 1e6` the bounded metric has
+reached `0.92 - 1.00` and has nowhere left to go.
+
+### The `sqrt(N)` collapse is recovered
+
+The mean distance decays as `N^-0.479` to `N^-0.482` against a theoretical `-0.5`, where Part 6
+measured `-0.22` to `-0.36` on the unbounded metric. Rescaled, `D sqrt(N)` is also **flat in `T`**
+(2.46, 2.49, 2.49 over two decades, where `sqrt(log T)` would give 1.29x), so for the mean the
+`N >= C log T` requirement is conservative. The maximum still does not collapse (`N^-0.114` to
+`N^-0.434`), exactly as the extreme-value reading predicts.
+
+### A thousand particles are worth 128-236 independent draws
+
+Using the Section 1 calibration, at `N = 1000` and `T = 1e6`:
+
+| regime | effective `N` | % of nominal |
+|---|---|---|
+| `M = d`, `rho = 0.9` | 236 | 23.6% |
+| `M > d`, `rho = 0.9` | 174 | 17.4% |
+| `M < d`, `rho = 0.9` | 156 | 15.6% |
+| `M < d`, `rho = 1.0` | 128 | 12.8% |
+
+No quantity in Parts 1-6 can be calibrated this way, because none of them is a probability. The
+metric also tracks cloud health far better: against `log(ESS)` it correlates at `-0.654` where the
+mean distance manages `-0.300`.
+
+### Limitations
+
+The distance is taken over the `d` coordinate axes. Adding 64 random directions raises it by a
+near-constant `1.21x` across all six configurations, so growth rates are unaffected -- but this is
+the **marginal** Kolmogorov distance, not the `d`-dimensional orthant version the theory uses.
+`T = 1e6` used a single seed: the mean and quantiles rest on `1e6` measurements and are precise,
+while the maximum there is one draw of an extreme. And Section 7.5.2 is a statement about what `N`
+guarantees a fixed precision; Section 6 tests a necessary consequence of it at fixed `N`, not the
+bound itself.
+
 ## Next steps
 
 Items 1-3 of the original plan (long horizons, many-dataset error bars, better proposals) are **done
@@ -590,12 +677,12 @@ remains:
 3. **Optimal proposals beyond the linear-Gaussian case.** Part 3's rescue relies on a closed form
    that only exists because the model is linear-Gaussian. In a nonlinear model the proposal must be
    approximated, so how much of the rescue survives is an open question.
-4. **Measure the Kolmogorov distance, not the mean distance (from Part 6).** Part 6 finds the
-   worst-case error growing like `(log T)^1.75`, well above the `sqrt(log T)` of Section 7.5.1 --
-   but on a different metric. The theorem bounds the Kolmogorov distance between the particle
-   approximation and its target, which is bounded by 1; Part 6 measures the distance between
-   posterior means, which is not. Computing the Kolmogorov distance between the weighted cloud and
-   the exact Gaussian posterior at each step would be a direct test, and is the natural follow-up.
+4. **Locate where the `log T` dependence enters (from Part 8).** Part 8 settles the metric
+   question -- the mean distance carries no horizon dependence at all, while the `99.9`th
+   percentile grows like `(log T)^0.35-0.71`. Which quantile first picks up a `log T` term would
+   sharpen the reading of Section 7.5.2, and costs nothing beyond rerunning Part 8's Section 6 on a
+   finer quantile grid. The `d`-dimensional orthant Kolmogorov distance, rather than Part 8's
+   marginal version, is the other loose end.
 5. **Error bars on the rest of Part 2.** Part 3 re-examined one single-dataset claim and it needed
    correcting; the others deserve the same treatment.
 6. **Map the detectability boundary (from Part 5).** Part 5 Section 9 shows the posterior becomes
