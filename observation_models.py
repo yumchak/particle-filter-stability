@@ -291,6 +291,19 @@ class ObsFunction:
         return out
 
 
+def _dot(a, b):
+    """`a @ b`, with numpy 2.0.2's spurious floating-point flags suppressed.
+
+    On this numpy build matmul raises divide/overflow/invalid warnings out of
+    its SIMD path even for inputs that are entirely finite and of order one --
+    `np.full(1000, 1e-3) @ rng.standard_normal((1000, 1))` reproduces all
+    three. The products below are checked finite, so the flags are noise, not
+    a symptom. Suppressed here in one place rather than worked around.
+    """
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        return a @ b
+
+
 def _col(x, j=0):
     return x[:, j]
 
@@ -628,11 +641,55 @@ def projection_split(fn, Sigma, span=6.0, n=4000, seed=0, tol=1e-7):
         y = np.atleast_2d(np.asarray(y, dtype=float))
         u = np.linalg.solve(L, (y - offset).T).T
         u = u - mu
-        zhat = u @ P.T
+        zhat = _dot(u, P.T)
         w = u - zhat
         return zhat, w
 
     return {"dim": k, "P": P, "basis": basis, "mean": mu, "L": L, "split": split}
+
+
+def affine_surrogate(fn, span=6.0, n=20_000, seed=0):
+    """The best affine approximation to f on [-span, span]^d, as an ObsFunction.
+
+    Section 5.3.1 needs the image of f to lie in a d-dimensional affine
+    subspace. When it does not, a practitioner's reflex is to apply the
+    reduction anyway -- linearise, project, carry on. This builds exactly that
+    surrogate: the least-squares fit
+
+        f(x) ~ A x + c,     A in R^{r x d},  c in R^r,
+
+    whose image IS an affine subspace of dimension at most d by construction,
+    so the projection of Section 5.3.2 always has something to discard. Running
+    the filter with this f in place of the true one, and scoring it against the
+    EXACT posterior of the true model, prices the assumption.
+
+    The fit is over the same window as the structural diagnostics, so "how
+    curved is f" and "how much does forcing the reduction cost" are measured on
+    the same domain.
+    """
+    rng = np.random.default_rng(seed)
+    xs = rng.uniform(-span, span, size=(n, fn.d))
+    vals = fn(xs)
+    design = np.column_stack([xs, np.ones(n)])
+    coef, *_ = np.linalg.lstsq(design, vals, rcond=None)      # (d+1, r)
+    A, c = coef[:fn.d], coef[fn.d]
+    resid = vals - _dot(design, coef)
+    # Relative residual: 0 means f was already affine, 1 means the fit explains
+    # none of the variation. This is the curvature number used in Part 9.
+    denom = np.linalg.norm(vals - vals.mean(axis=0))
+    rel = float(np.linalg.norm(resid) / max(denom, 1e-300))
+
+    out = ObsFunction(
+        name=fn.name + "~affine", d=fn.d, r=fn.r,
+        f=lambda x, A=A: _dot(x, A),
+        latex=r"\mathrm{affine}(" + (fn.latex or fn.name) + ")",
+        linear_image=True, bi_lipschitz="yes",
+        injective=bool(np.linalg.matrix_rank(A) == fn.d),
+        group="surrogate", offset=c,
+        note=f"least-squares affine fit to {fn.name}, rel. residual {rel:.3f}")
+    out.rel_residual = rel
+    out.A = A
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -661,7 +718,7 @@ def simulate_obs_model(fn, pot, Sigma, T=500, b=1.0, Q=1.0, x0=0.0, seed=42):
     for t in range(T):
         cur = b * cur + math.sqrt(Q) * rng.standard_normal(d)
         x[t] = cur
-    y = fn(x) + pot.sample_noise(T, r, rng) @ L.T
+    y = fn(x) + _dot(pot.sample_noise(T, r, rng), L.T)
     return x, y
 
 
@@ -719,7 +776,7 @@ def particle_filter_obs(y, fn, pot, Sigma, b=1.0, Q=1.0, N=1000, x0=0.0,
             # Work inside V: coordinates of the whitened residual in the basis.
             uy = np.linalg.solve(L, (y[t] - offset)) - mu
             ufx = np.linalg.solve(L, (fx - offset).T).T - mu
-            resid = (uy @ basis) - (ufx @ basis)             # (N, k)
+            resid = _dot(uy, basis) - _dot(ufx, basis)        # (N, k)
         else:
             resid = np.linalg.solve(L, (y[t] - fx).T).T      # (N, r)
 
@@ -738,7 +795,7 @@ def particle_filter_obs(y, fn, pot, Sigma, b=1.0, Q=1.0, N=1000, x0=0.0,
         else:
             weights = w / total
 
-        est[t] = weights @ particles
+        est[t] = _dot(weights, particles)
         ess[t] = effective_sample_size(weights)
 
         if stats is not None and t % stat_every == 0:
@@ -890,3 +947,238 @@ def ks_vs_grid(particles, weights, grid, post):
     prev[0] = 0.0
     prev[1:] = cum[:-1]
     return float(np.maximum(np.abs(cum - exact), np.abs(prev - exact)).max())
+
+
+# ---------------------------------------------------------------------------
+# 9. Two-dimensional exact benchmark (groups D and E)
+# ---------------------------------------------------------------------------
+#
+# Groups D (r < d) and E (genuinely multivariate f) have d = 2, where
+# `grid_filter_obs` does not apply. The same recursion goes through on a
+# tensor grid: the transition x -> b x + v with v ~ N(0, Q I_2) has an
+# ISOTROPIC and SEPARABLE kernel, so the predict step is two one-dimensional
+# convolutions rather than one two-dimensional one -- O(G^2 log G) instead of
+# O(G^4), which is what makes an exact benchmark affordable here at all.
+#
+# These cases are the ones where an exact benchmark matters most. For
+# bearings-only or range-only observation the posterior is genuinely
+# multimodal (a ring, or a pair of rays), so no Gaussian approximation and no
+# comparison of means can serve as ground truth.
+
+
+def grid_filter_obs_2d(y, fn, pot, Sigma, b=1.0, Q=1.0, x0=0.0,
+                       half_width=None, h=0.08, x_ref=None, return_post=False):
+    """Exact filtering distribution for d = 2, on a tensor grid.
+
+    Same recursion as `grid_filter_obs`:
+
+        predict:  convolve with the N(0, Q I_2) transition density
+        update:   multiply by G_t and renormalise
+
+    with the convolution factorised across the two axes. The potential is
+    evaluated on all G^2 nodes at each step, which is the dominant cost, so `h`
+    is coarser here by default than in one dimension. Validated against
+    `kalman_filter_md` on the linear-Gaussian case in Part 9.
+
+    Returns (mean (T,2), cov (T,2,2), loglik (T,), gx, gy) and, with
+    `return_post=True`, the full posterior (T, G, G) as well -- which for the
+    tracking models is a ring or a pair of rays rather than anything a mean
+    could summarise.
+    """
+    y = np.atleast_2d(np.asarray(y, dtype=float))
+    T = y.shape[0]
+    if fn.d != 2:
+        raise ValueError("grid_filter_obs_2d is for d = 2 only")
+
+    if half_width is None:
+        if x_ref is not None:
+            half_width = float(np.max(np.abs(x_ref))) + 8.0 * math.sqrt(Q)
+        elif abs(b) < 1.0:
+            half_width = 7.0 * math.sqrt(Q / (1.0 - b * b)) + 8.0
+        else:
+            half_width = 5.0 * math.sqrt(Q * max(T, 1)) + 8.0
+
+    G = int(round(2 * half_width / h)) + 1
+    g = np.linspace(-half_width, half_width, G)
+    step = g[1] - g[0]
+    gx, gy = np.meshgrid(g, g, indexing="ij")
+    nodes = np.column_stack([gx.ravel(), gy.ravel()])        # (G^2, 2)
+
+    m, kern = _gaussian_kernel(step, Q)
+    nfft = 1 << int(math.ceil(math.log2(G + 2 * m + 1)))
+    kern_f = np.fft.rfft(kern, nfft)
+
+    def conv_axis(arr, axis):
+        out = np.fft.irfft(np.fft.rfft(arr, nfft, axis=axis) *
+                           kern_f.reshape([-1 if i == axis else 1
+                                           for i in range(arr.ndim)]),
+                           nfft, axis=axis)
+        sl = [slice(None)] * arr.ndim
+        sl[axis] = slice(m, m + G)
+        return out[tuple(sl)] / step
+
+    L = np.linalg.cholesky(np.atleast_2d(Sigma))
+    fnodes = fn(nodes)                                       # (G^2, r)
+
+    mean = np.zeros((T, 2))
+    cov = np.zeros((T, 2, 2))
+    loglik = np.zeros(T)
+    post_hist = np.zeros((T, G, G)) if return_post else None
+
+    start = np.full(2, float(x0)) if np.isscalar(x0) else np.asarray(x0, float)
+    cell = step * step
+    running = 0.0
+    post = None
+    for t in range(T):
+        if t == 0:
+            c = b * start
+            pred = np.exp(-0.5 * ((gx - c[0]) ** 2 + (gy - c[1]) ** 2) / Q) \
+                / (2.0 * math.pi * Q)
+        else:
+            if b == 1.0:
+                src = post
+            else:
+                # push x -> b x forward by bilinear interpolation on each axis
+                src = np.apply_along_axis(
+                    lambda col: np.interp(g / b, g, col, left=0.0, right=0.0),
+                    0, post)
+                src = np.apply_along_axis(
+                    lambda row: np.interp(g / b, g, row, left=0.0, right=0.0),
+                    1, src) / (b * b)
+            pred = conv_axis(conv_axis(src, 0), 1)
+
+        resid = np.linalg.solve(L, (y[t] - fnodes).T).T
+        lg = pot.log_weight(resid).reshape(G, G)
+        lg -= lg.max()
+        joint = pred * np.exp(lg)
+        mass = joint.sum() * cell
+        if mass <= 0 or not np.isfinite(mass):
+            raise FloatingPointError(
+                f"2-d grid filter lost all mass at t={t}; widen half_width "
+                f"(currently {half_width:g}) or shrink h")
+        post = joint / mass
+        running += math.log(mass)
+
+        w = post * cell
+        mx = float((w * gx).sum())
+        my = float((w * gy).sum())
+        mean[t] = (mx, my)
+        cov[t, 0, 0] = float((w * (gx - mx) ** 2).sum())
+        cov[t, 1, 1] = float((w * (gy - my) ** 2).sum())
+        cov[t, 0, 1] = cov[t, 1, 0] = float((w * (gx - mx) * (gy - my)).sum())
+        loglik[t] = running
+        if return_post:
+            post_hist[t] = post
+
+    if return_post:
+        return mean, cov, loglik, g, post_hist
+    return mean, cov, loglik, g
+
+
+def ks_vs_grid_2d(particles, weights, g, post, dirs):
+    """Kolmogorov distance along directions, cloud vs a gridded 2-d posterior.
+
+    The Kolmogorov distance has no canonical multivariate form, so Part 8's
+    convention carries over unchanged: project both the weighted cloud and the
+    exact posterior onto a unit direction, compare the two one-dimensional
+    CDFs, and report the worst direction. Each projection is still a
+    difference of two probabilities, so the result is still in [0, 1], and it
+    still means something when the exact posterior is a ring.
+
+    The exact projected CDF is obtained by sorting the grid cells by u'x and
+    accumulating their mass, which is exact for the discretised posterior.
+    """
+    x = np.atleast_2d(np.asarray(particles, dtype=float))
+    w = np.asarray(weights, dtype=float)
+    step = g[1] - g[0]
+    gx, gy = np.meshgrid(g, g, indexing="ij")
+    nodes = np.column_stack([gx.ravel(), gy.ravel()])
+    mass = (post * step * step).ravel()
+
+    worst = 0.0
+    for u in np.atleast_2d(np.asarray(dirs, dtype=float)):
+        pe = _dot(nodes, u)
+        oe = np.argsort(pe)
+        ex_s, ex_c = pe[oe], np.cumsum(mass[oe])
+        ex_c /= ex_c[-1]
+
+        pp = _dot(x, u)
+        op = np.argsort(pp)
+        xs, cum = pp[op], np.cumsum(w[op])
+        exact = np.interp(xs, ex_s, ex_c, left=0.0, right=1.0)
+        prev = np.empty_like(cum)
+        prev[0] = 0.0
+        prev[1:] = cum[:-1]
+        worst = max(worst, float(np.maximum(np.abs(cum - exact),
+                                            np.abs(prev - exact)).max()))
+    return worst
+
+
+# ---------------------------------------------------------------------------
+# 10. Equalising the information across different f
+# ---------------------------------------------------------------------------
+#
+# Part 7 established that what looked like a dimension effect in Part 2 was a
+# PRECISION effect: comparing two filters at different observation precisions
+# measures the precision, not the thing under study. The same trap is far worse
+# here, because a nonlinear f sets its own precision pointwise.
+#
+# For a Gaussian potential with Sigma = R0 I_r, the Fisher information that y_t
+# carries about x_t is
+#
+#     I(x) = J(x)' J(x) / R0,      J = df/dx  (r x d),
+#
+# so with Sigma = I the cubic f(x) = [x^3, x^3] is 2 * 9 x^4 times as
+# informative as f(x) = [x, x]. At |x| ~ 24 that is a factor of 6 million, and
+# the exact posterior standard deviation collapses to 2e-18 -- past the point
+# where a bootstrap filter can propose into it OR a grid can resolve it. Any
+# comparison of f shapes run at a common Sigma is therefore measuring
+# ||J||^2, not shape.
+#
+# `information_scale` removes that confound the same way Part 7 did: it picks
+# R0 so that the MEDIAN information over the states actually visited matches a
+# target, leaving the shape of f as the only thing that differs.
+
+
+def information_scale(fn, target=None, b=0.9, Q=1.0, T=4000, seed=0, eps=1e-5):
+    """R0 such that Sigma = R0 I_r equalises median Fisher information.
+
+    The states are drawn from the model's own stationary law (|b| < 1) or from
+    a random-walk trajectory (b = 1), so "typical" means typical for the run
+    being filtered rather than for an arbitrary window. The Jacobian is taken
+    by central differences, which costs nothing here and keeps the function
+    registry free of hand-coded derivatives.
+
+    `target` defaults to r, which leaves Sigma = I exactly for the replication
+    baseline f(x) = [x, ..., x] and so keeps every earlier number comparable.
+
+    Returns (R0, median ||J||_F^2, 10th and 90th percentiles of ||J||_F^2).
+    The spread is reported because equalising the median does NOT equalise the
+    range: for a superlinear f the information still varies by orders of
+    magnitude along one trajectory, and that spread is itself a finding.
+    """
+    if target is None:
+        target = float(fn.r)
+    rng = np.random.default_rng(seed)
+    if abs(b) < 1.0:
+        xs = rng.standard_normal((T, fn.d)) * math.sqrt(Q / (1.0 - b * b))
+    else:
+        steps = math.sqrt(Q) * rng.standard_normal((T, fn.d))
+        xs = np.cumsum(steps, axis=0)
+
+    # ||J||_F^2 by central differences, one state dimension at a time.
+    jsq = np.zeros(len(xs))
+    for j in range(fn.d):
+        step = np.zeros(fn.d)
+        step[j] = eps
+        deriv = (fn(xs + step) - fn(xs - step)) / (2.0 * eps)      # (T, r)
+        jsq += np.sum(deriv ** 2, axis=1)
+
+    med = float(np.median(jsq))
+    lo, hi = (float(v) for v in np.percentile(jsq, [10, 90]))
+    if not np.isfinite(med) or med <= 0:
+        # A flat f (round(x) between jumps, a saturated tanh) carries no local
+        # information at all. There is nothing to equalise; leave Sigma = I and
+        # let the experiment record the consequence.
+        return 1.0, med, lo, hi
+    return float(med / target), med, lo, hi

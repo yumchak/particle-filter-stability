@@ -35,13 +35,15 @@ decaying and starts to explode.
 | `04b_student_t_rho1.ipynb` | **Part 4b.** Part 4 re-run at `b = 1`. The random-walk variant Part 4 said it had not run: observations do become large, and it still makes no difference -- the dial is the innovation, not the observation level. |
 | `05_f_stability_threshold.ipynb` | **Part 5.** Varies the spectral radius of `F` across the stability threshold, in 1D and in `d` dimensions, with and without coupling: accuracy, cloud health, long-run behaviour, and what happens when an explosive direction is never observed. |
 | `06_long_horizons.ipynb` | **Part 6.** How the error grows with `T`, up to `10^6`. Tracks the **maximum** error across decades rather than comparing halves of one run. Finds the maximum grows `7-9x` while the mean grows `1.1x` -- the statistic, not the horizon, was what limited Parts 1-3b. |
-| `07_student_t_likelihood.ipynb` | **Part 7.** Student-t observation likelihood with `M > d`, and the `d`-dimensional projection experiment. *Placeholder — planned for reading week.* |
+| `07_student_t_likelihood.ipynb` | **Part 7.** Student-t observation likelihood with `M > d`, under a control that holds total precision fixed. Extra coordinates cost nothing under any likelihood; what Part 2 saw was precision; and the `d`-dimensional projection stops being free, at up to `4.7x`. |
+| `08_kolmogorov_distance.ipynb` | **Part 8.** Replaces the mean distance with the Kolmogorov distance -- bounded, scale-free, calibratable -- and shows Part 6's growing maximum is an extreme-value effect, not degradation: the per-step distribution is stationary over `10^6` steps. |
+| `09_nonlinear_observations.ipynb` | **Part 9.** 39 nonlinear observation functions `f` x 4 potentials x 3 filter variants, scored against an exact grid posterior in one and two dimensions. The shape of `f` costs nothing; *assuming* the Gaussian reduction when it fails costs up to `16x`. |
 | `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
+| `observation_models.py` | Parts 7-9: arbitrary observation functions `f` (a 41-entry registry with **measured** rather than asserted structure), four potential shapes including the paper's own, the Section 5.3.2 projection, the affine surrogate, the information-equalising control, and exact grid benchmarks for `d = 1` and `d = 2`. |
 
-The notebooks are numbered in reading order. Parts 1-6 and the `b` variants are committed **with
-their outputs**, so every plot and number renders on GitHub without running anything. Part 7 is a
-placeholder. Part 5 needs no additions to
+The notebooks are numbered in reading order. All of them are committed **with their outputs**, so
+every plot and number renders on GitHub without running anything. Part 5 needs no additions to
 `filters.py`: the spectral radius is already a parameter of `build_model`, reachable through
 `run_case(d, M, b=..., coupling=...)`.
 
@@ -758,6 +760,142 @@ while the maximum there is one draw of an extreme. And Section 7.5.2 is a statem
 guarantees a fixed precision; Section 6 tests a necessary consequence of it at fixed `N`, not the
 bound itself.
 
+---
+
+# Part 9: Nonlinear observation functions
+
+Every part up to here observes the state through a **linear** map. Part 9 replaces it with an
+arbitrary one -- the model from the supervision whiteboard,
+
+```
+x_{t+1} = b x_t + U_t,     y_t = f(x_t) + eps_t
+```
+
+-- and runs **39 distinct `f`** through the filter: `[x + cos x, x]`, `|x|`, `log(1 + x^2)`, `e^x`,
+`[cos x, sin x]`, `round(x)`, `clip(x, +-3)`, a product lift, polar coordinates, range-only and
+bearings-only tracking. Each is crossed with four potentials (Gaussian, joint Student-t at
+`nu = 5` and `nu = 1`, coordinate-wise Student-t) and three filter variants, in one and two state
+dimensions.
+
+Once `f` is nonlinear the model is not linear-Gaussian, so **the Kalman filter is not its exact
+filter and cannot be the benchmark.** The benchmark is a grid filter carrying the exact recursion
+out numerically: `grid_filter_obs` for `d = 1`, and `grid_filter_obs_2d`, added here, for `d = 2`.
+Both are validated against the Kalman filter where both apply -- `4e-15` at `b = 1`, where the
+predict step is a pure convolution.
+
+## The distinction the paper actually turns on
+
+Del Moral & Gerber (2026) Section 5.3.1 needs the **image** `f(R^d)` to lie in a `d`-dimensional
+affine subspace. That is not the same as `f` being linear, and the registry is built so the two can
+be measured apart:
+
+| `f` | bi-Lipschitz? | image | reduction |
+|---|---|---|---|
+| `[x^3, x^3]` | no -- constants span `9.8e-10` to `1.5e2` | a **line** | **holds** |
+| `[x + cos x, x]` | yes -- constants `1.00` and `2.24` | a **curve** | **fails** |
+
+The violently nonlinear one reduces; the tame one does not. The registry's own hand-set flags were
+wrong in **7 of 41 entries**, all `d = 2`; the measurement overruled them. The census also found two
+pairs of entries to be the same map under two names (a norm is a range; polar coordinates are
+range-and-bearing), so 41 entries are 39 functions.
+
+## Holding precision fixed, again
+
+A nonlinear `f` sets its own observation precision pointwise: at `Sigma = I` the cubic `[x^3, x^3]`
+is `18 x^4` times as informative as `[x, x]`. At `b = 1` the state reaches `|x| = 44`, and there the
+exact posterior has standard deviation **`2e-18`** -- narrower than any affordable grid cell, so
+both the filter and the benchmark are meaningless. Comparing `f` shapes at a common `Sigma` would
+have been a study of `||J||^2` in disguise, exactly the trap Part 7 identified in Part 2.
+
+`information_scale` fixes the **median** Fisher information over the states actually visited, leaving
+`Sigma = I` for the replication baselines so Part 7's numbers stay comparable. It cannot fix the
+range, and the spread is itself a result: `1x` for `[x, x]` and `|x|`, `4.8x` for `[x + cos x, x]`,
+`1.9e4x` for `[x^3, x^3]`, `1.2e5x` for `e^x`, **infinite** for `round(x)` and `clip(x)`. "Fixed
+observation precision" is not a property a nonlinear `f` has.
+
+## The main result is negative
+
+**With precision held fixed, the shape of `f` costs the correct filter essentially nothing.** Over
+122 cells the mean Kolmogorov distance is `0.0474`, spread `0.0390` to `0.0950` -- a factor of
+`2.4` between the best and worst cell in the matrix:
+
+| group | n | Gaussian | t joint `nu=5` | t joint `nu=1` | t indep `nu=5` |
+|---|---|---|---|---|---|
+| A: linear image | 7 | `0.0489 +- 0.0053` | `0.0482 +- 0.0058` | `0.0461 +- 0.0055` | `0.0476 +- 0.0074` |
+| B1: curved, bi-Lipschitz | 10 | `0.0464 +- 0.0032` | `0.0466 +- 0.0017` | `0.0445 +- 0.0014` | `0.0456 +- 0.0018` |
+| B2: curved, lower bound only | 4 | `0.0541 +- 0.0067` | `0.0538 +- 0.0064` | `0.0500 +- 0.0058` | `0.0536 +- 0.0054` |
+| C: (P1)b violated | 10 | `0.0514 +- 0.0161` | `0.0461 +- 0.0058` | `0.0444 +- 0.0070` | `0.0461 +- 0.0058` |
+
+The groups are as structurally different as the paper's conditions allow, and they **agree to within
+their own scatter**. `clip(x, +-3)`, which destroys information outright, is the *best* cell in the
+matrix. `round(x)`, discontinuous with zero derivative almost everywhere, scores `0.0418`. Scaling
+in `N` confirms this is sampling error and not bias: slopes `-0.478` to `-0.509` against the
+theoretical `-0.5`, across a discontinuous `f`, a censored one, a curved image and a bimodal
+posterior.
+
+Taken with Part 7, the arc that began with Part 2's withdrawn claim closes: **the bootstrap filter
+is sensitive to how sharp the likelihood is relative to the proposal, and close to indifferent to
+the geometry of the map producing it.**
+
+## Four things that do cost something
+
+1. **Assuming Section 5.3.1 when it fails: `1.2x` to `15.9x`.** The reduction is not available
+   approximately. The `affine` variant replaces `f` by its best affine fit -- whose image *is* a
+   line, so the projection always has something to discard -- and scores it against the exact
+   posterior of the true model. Worst: `e^x` paired with `x` at `15.9x`, `tanh x` at `14.0x`, the
+   circle at `13.7x`. The cost is **geometric, not distributional**: reading across the four
+   potentials changes it by at most ~20%.
+2. **The projection, under a heavy-tailed potential: `1.30x` to `3.22x`**, reproducing Part 7 on new
+   functions. Exactly `1.000` under a Gaussian -- to `2.8e-17`, round-off on identical random
+   numbers -- and decaying to 1 by `nu = 30` with nothing fitted (`3.22, 2.74, 1.79, 1.21, 1.00` for
+   `nu = 1, 2, 5, 10, 30`).
+3. **Non-injectivity, but only once the state wanders.** Harmless at `b = 0.9`; up to **`6.5x`** at
+   `b = 1`. For an even `f` the posterior has modes at `+-x_t`, so their separation is `2|x_t|` and
+   grows with the state: at `|x| = 44` the modes are 88 apart while the proposal moves particles
+   `O(1)` per step. This is the only genuine interaction between `f` and the dynamics found here.
+4. **Under-observation along a curve.** Observing only `||x||` (`0.270`) or `x_1 x_2` (`0.235`) costs
+   twice what observing only `x_1` (`0.121`) or `x_1 + x_2` (`0.118`) costs. Being under-observed is
+   cheap; being under-observed along a ring or a hyperbola is not.
+
+## The projection needs equation (9), not merely a non-exponential zeta
+
+Section 5.3.2 works in an orthonormal basis of `V`, so it **rotates** the whitened residual. It is
+therefore a reparameterisation only for a potential that is a function of `||u||^2` alone. The
+Gaussian and the joint Student-t are (invariance to `< 2e-15`); the **coordinate-wise** Student-t is
+not (`1.237`), and for it the projection changes the filter by `3.5e-2` **even on the 24 cells where
+it discards nothing at all**. Per-coordinate Student-t noise is the more natural of the two models,
+so this is the practically relevant case.
+
+## A limitation of Parts 1-6, now quantified
+
+Parts 1-6 all measured accuracy as a distance between posterior means. For a non-injective `f` that
+is not merely noisy but meaningless:
+
+| `f` | mean abs. posterior mean | mean abs. true state | RMSE of the **exact** mean | Kolmogorov | bimodal |
+|---|---|---|---|---|---|
+| `abs(x)` | `0.000` | `2.026` | `2.576` | `0.0573` | 87% of steps |
+| `x^2` | `0.000` | `2.026` | `2.576` | `0.0950` | 69% |
+| `cos x` | `0.000` | `2.026` | `2.576` | `0.0481` | 81% |
+| `log(1 + x^2)` | `0.000` | `2.026` | `2.576` | `0.0461` | 82% |
+| `x + cos x` | `1.893` | `2.026` | `0.841` | `0.0428` | 1% |
+
+The observation cannot tell `x` from `-x`, so the exact posterior is symmetric and its mean is pinned
+near zero wherever the state is. A mean-based metric would have reported these four as catastrophic
+failures while the filters were performing normally for this matrix. The Kolmogorov distance was
+adopted in Part 8 for its scale-freeness; **its more consequential property turns out to be being
+defined at all when the posterior is multimodal.**
+
+## What was not settled
+
+`x^2` is the one cell where more particles stop helping: slope `-0.342`, and `0.0370 -> 0.0355` from
+`N = 4000` to `N = 16000` where every other function halves. `|x|` is equally bimodal and scales at
+`-0.495`, so bimodality alone is not the cause -- `sq_only` is bimodal **and** the most informative
+group-C function, and it is that pairing that flattens the curve. It is the same mechanism Part 9
+isolates at `b = 1`, reached by raising precision instead of letting the state wander.
+
+`exp_only` and `softsign_only` remain unusable at `b = 1`: their information varies by `1e41` and
+`3e3` along a single trajectory, which fixing the median cannot address.
+
 ## Next steps
 
 Items 1-3 of the original plan (long horizons, many-dataset error bars, better proposals) are **done
@@ -775,7 +913,10 @@ remains:
    smoother is again available as an exact benchmark.
 3. **Optimal proposals beyond the linear-Gaussian case.** Part 3's rescue relies on a closed form
    that only exists because the model is linear-Gaussian. In a nonlinear model the proposal must be
-   approximated, so how much of the rescue survives is an open question.
+   approximated, so how much of the rescue survives is an open question. Part 9 sharpens the target:
+   the only failure mode it found twice over is a sharp likelihood that must be satisfied at two
+   well-separated modes, which is a **proposal** problem rather than a model one. `sq_only` at
+   `b = 0.9` and `|x|` at `b = 1` are the two cells to run.
 4. **Locate where the `log T` dependence enters (from Part 8).** Part 8 settles the metric
    question -- the mean distance carries no horizon dependence at all, while the `99.9`th
    percentile grows like `(log T)^0.35-0.71`. Which quantile first picks up a `log T` term would
@@ -783,17 +924,27 @@ remains:
    finer quantile grid. The `d`-dimensional orthant Kolmogorov distance, rather than Part 8's
    marginal version, is the other loose end.
 5. **Error bars on the rest of Part 2.** Part 3 re-examined one single-dataset claim and it needed
-   correcting; the others deserve the same treatment.
-6. **Map the detectability boundary (from Part 5).** Part 5 Section 9 shows the posterior becomes
+   correcting; the others deserve the same treatment. Parts 7 and 9 add a reason to: both found the
+   effects that survive a fixed-precision control to be small enough that single-dataset scatter
+   could hide or invent one.
+6. **A posterior-weighted curvature measure (from Part 9).** The relative residual of the affine fit
+   predicts the cost of forcing the Gaussian reduction at a correlation of only `0.596`. Weighting
+   the misfit by the posterior rather than by the sampling window would plausibly do better, and
+   would turn Part 9 Section 6 from a ranking into a prediction.
+7. **A state-dependent `Sigma`, or a compact state space (from Part 9).** `e^x` and `x/(1 + |x|)`
+   cannot be run at `rho(F) = 1`: their Fisher information varies by `1e41` and `1e3` along one
+   trajectory, so equalising its median is not enough. Either control would close the two cells
+   Part 9 had to drop.
+8. **Map the detectability boundary (from Part 5).** Part 5 Section 9 shows the posterior becomes
    unbounded when an explosive direction is never observed, in a single case. Sweeping `M` from 1 to
    `d` at fixed `b > 1` would measure how much observation is enough to keep it bounded.
-7. **A de-trended formulation for explosive long runs (from Part 5).** Filtering `z_t = F^-t x_t`, or
+9. **A de-trended formulation for explosive long runs (from Part 5).** Filtering `z_t = F^-t x_t`, or
    working in log scale, would make `b = 1.1` at `T = 2000` measurable instead of losing it to
    floating-point cancellation.
-8. **Does the optimal proposal help where the posterior is unbounded?** Part 3's rescue fixes the
+10. **Does the optimal proposal help where the posterior is unbounded?** Part 3's rescue fixes the
    large-`M` collapse. Part 5 Section 9 suggests it would *not* help with unbounded posterior
    uncertainty, since that is not a proposal problem - a clean negative result if confirmed.
-9. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
+11. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
    located empirically at `nu ~ 10` (Part 4 Section 8). What remains is the shape-fixed control --
    a Gaussian filter run at the Student-t's reduced scale -- and whether the `nu ~ 10` location can
    be derived rather than measured.
