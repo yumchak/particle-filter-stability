@@ -572,6 +572,105 @@ Two seeds at `T = 1e6` and four at `1e5`, so the longest-horizon points are the 
 the most weight in the fitted exponent. One dataset per setting. And minimum ESS is itself an
 extreme-value statistic, so its fall with `T` is partly definitional.
 
+# Part 7: Student-t likelihood with `M > d`
+
+Part 2 claimed that more observations make the particle filter worse. Dr Gerber pointed out that
+under a Gaussian likelihood this model reduces the `M`-dimensional observation to a `d`-dimensional
+one (his Section 5.3.3), so the experiment could not have been testing that; the claim was
+withdrawn. This notebook builds the setting where it **is** testable -- a Student-t likelihood,
+where the reduction fails -- and tests it. It also answers point 5 of his email: replacing `y` by
+its `d`-dimensional projection.
+
+Uses `observation_models.py`. Since the model is no longer linear-Gaussian, the Kalman filter is not
+its exact filter; the benchmark is a **grid filter**, checked against Kalman to `1e-13` on the
+Gaussian cases. The metric is the Kolmogorov distance of Part 8 -- bounded, scale-free, and
+calibrated so that a score `D` means about `(1.017/D)^2` independent draws.
+
+### Making "more observations" a fair test
+
+With `f(x) = Ax`, `A = (1,...,1)'` and `Sigma = r I_M`, the precision is `A' Sigma^-1 A = M/r`, so
+Part 2's convention **raises precision** as `M` grows. Setting `Sigma = M r0 I_M` instead holds it
+at `1/r0`. The exact posterior spread is then identical at every `M` -- `0.78593` at
+`M = 1, 2, 4, 8, 16`, to five decimals -- so the same problem is simply spread over more
+coordinates, and dimension is isolated.
+
+### Extra coordinates are not harmful, even under a Student-t
+
+At fixed total precision, mean Kolmogorov distance from `M = 1` to `M = 16`:
+
+| potential | mean KS | effective `N` |
+|---|---|---|
+| Gaussian | `0.0459 -> 0.0447` | `491 -> 519` |
+| Student-t `nu = 5` | `0.0444 -> 0.0433` | `525 -> 553` |
+| Student-t `nu = 1` | `0.0436 -> 0.0433` | `546 -> 554` |
+
+Flat everywhere. At `nu = 1` the cloud is actually healthier at large `M` (mean ESS `531 -> 576`,
+resampling rate `0.47 -> 0.40`). **The natural reading of the withdrawn sentence fails even where it
+can be tested.**
+
+### What Part 2 saw was precision, exactly as the correction said
+
+Under Part 2's own convention the effective sample size roughly halves -- but by the same factor for
+every likelihood:
+
+| potential | KS ratio `M: 1 -> 16` | effective `N` |
+|---|---|---|
+| Gaussian | 1.50 | `491 -> 219` |
+| Student-t `nu = 1` | 1.46 | `546 -> 256` |
+| Student-t `nu = 5` | 1.53 | `525 -> 226` |
+| Student-t `nu = 30` | 1.54 | `511 -> 216` |
+
+A mechanism that behaves identically from Cauchy to near-Gaussian is not a tail mechanism, and it
+vanishes once precision is held fixed. This does **not** reinstate the withdrawn claim; it sharpens
+what Part 2 saw. Part 2 reported the relative gap and found it flat; on a distributional metric the
+cloud's worth does fall, `491 -> 219` draws. A sharper likelihood buys a better answer (exact RMSE
+`0.772 -> 0.239`) with a worse cloud.
+
+### The real consequence: the projection stops being free
+
+Cost of replacing `y` by its `d`-dimensional projection, as a ratio of mean Kolmogorov distances:
+
+| `nu` | `M=2` | `M=4` | `M=8` | `M=16` |
+|---|---|---|---|---|
+| 1 | 3.15 | 4.17 | 4.32 | **4.73** |
+| 2 | 2.40 | 3.15 | 3.49 | 4.02 |
+| 5 | 1.56 | 2.04 | 2.38 | 2.70 |
+| 10 | 1.20 | 1.44 | 1.65 | 1.91 |
+| 30 | 1.02 | 1.08 | 1.16 | 1.25 |
+
+Monotone in both directions across all twenty cells, and it converges to exactly the right place:
+at `M = 8` the cost is `2.379`, `1.162`, `1.020`, `1.008`, `1.000` for `nu = 5, 30, 100, 1000` and
+Gaussian. Run on identical random numbers, the Gaussian full and projected filters agree to
+`2e-15` -- they are the same filter -- while at `nu = 5` they differ by `0.57` to `1.64`.
+
+**That is the testable content of the original intuition, and it holds.** Not "extra coordinates
+hurt", but "under a Student-t the extra coordinates carry real information, so assuming the
+Gaussian reduction costs up to a factor of 4.7".
+
+### Why: `w_t` says how far to trust `zhat_t`
+
+At `M = 8`, `nu = 2`, split by the size of the discarded residual:
+
+| steps | full KS | projected KS | excess |
+|---|---|---|---|
+| quiet (`||w||^2` below median) | 0.0486 | 0.1397 | 0.0911 |
+| wild (top 10%) | 0.0349 | 0.2250 | **0.1901** |
+
+On the wild steps the **full** filter beats its own average while the projected filter collapses. A
+large `||w||^2` means the `M` coordinates disagree, which under a shared-scale Student-t is the
+signature of an outlier. The full filter sees it and discounts the observation; the projected filter
+has thrown the evidence away. So `w_t` carries no information about `x_t` -- that is geometry -- but
+it carries information about **how much to believe** the part that does.
+
+### Limitations
+
+`d = 1` throughout, because the exact benchmark is a one-dimensional grid filter. `f(x) = [x,...,x]`
+only, a deliberately linear image, so that the potential shape is the only thing that can break the
+reduction -- curved images break it independently, which is Part 9. The joint Student-t shares one
+scale across coordinates, which is what makes `||w||^2` informative; the independent-per-coordinate
+version, where the mechanism should be weaker, is available in the module but not swept here. And
+`rho(F) = 1` (random walk) throughout, matching the model from the meeting.
+
 # Part 8: The Kolmogorov distance — measuring what the theorem bounds
 
 Part 6 closed by saying the theorem and the experiment used different metrics. This notebook
