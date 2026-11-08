@@ -41,9 +41,10 @@ decaying and starts to explode.
 | `10_detectability_boundary.ipynb` | **Part 10.** Sweeps `M` from 1 to `d` above the stability threshold, as Part 5 asked. Finds no boundary in `M` -- `M = d-1` is as bad as `M = 1` -- and that detectability, an exact test on `(F, H)`, decides it in `84/84` cells. Then the first failure of time-uniform stability in the project. |
 | `11_part2_error_bars.ipynb` | **Part 11.** The six Part 2 claims Part 3 did not re-test, over 30 datasets instead of one. Two fall: the `O(1/sqrt N)` rate does **not** hold at `M < d`, and the `M < d` cloud is not healthier. Both failures trace to the same cause, and the rate deficit sits entirely in the unobserved directions. |
 | `12_screen_2b_4_5.ipynb` | **Part 12.** The same screen on Parts 2b, 4 and 5: ten claims classified and **predicted before being run**, then tested over 30 datasets. Two fall (Part 2b's rate, Part 4's in-model ESS claim), Part 5 comes out clean, and the rule scores `7/10` -- the three misses correcting it. |
+| `13_proposals_nonlinear.ipynb` | **Part 13.** How much of Part 3's optimal-proposal rescue survives once the model is not linear-Gaussian and the proposal must be approximated. Four proposals, including an exact one computed numerically as a ceiling. The rescue is real; the approximations give up the `N^-1/2` rate because their tails are lighter than the target's, and `t_5` components restore it for free. |
 | `filters.py` | Core filter code for Parts 1–3, 5, 6 and 10: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions, the Kolmogorov distance against a Gaussian posterior (Part 8), and Part 10's detectability tools -- the observability matrix and its subspaces, the Hautus test, and the data-free covariance recursion. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
-| `observation_models.py` | Parts 7-9: arbitrary observation functions `f` (a 41-entry registry with **measured** rather than asserted structure), four potential shapes including the paper's own, the Section 5.3.2 projection, the affine surrogate, the information-equalising control, and exact grid benchmarks for `d = 1` and `d = 2`. |
+| `observation_models.py` | Parts 7-9: arbitrary observation functions `f` (a 41-entry registry with **measured** rather than asserted structure), four potential shapes including the paper's own, the Section 5.3.2 projection, the affine surrogate, the information-equalising control, and exact grid benchmarks for `d = 1` and `d = 2`. Part 13 adds four proposals for a general scalar `f` -- bootstrap, an exact locally optimal one by numerical CDF inversion, and Gaussian or Student-t mixtures from linearising at the prior mean or at every likelihood mode. |
 
 The notebooks are numbered in reading order. All of them are committed **with their outputs**, so
 every plot and number renders on GitHub without running anything. Part 5 needs no additions to
@@ -992,6 +993,12 @@ defined at all when the posterior is multimodal.**
 group-C function, and it is that pairing that flattens the curve. It is the same mechanism Part 9
 isolates at `b = 1`, reached by raising precision instead of letting the state wander.
 
+> **Correction (added after Part 13).** The paragraph above is withdrawn. Over 12 datasets instead
+> of one, `sq_only` fits `-0.5007 +- 0.0207` -- `t = -0.07` from the theoretical `-0.5` and
+> `t = -15.00` from `-0.342`, with Part 9's value `7.7` CI widths outside the interval and `0` of
+> `12` datasets above `-0.40`. `sq_only` scales like everything else. The explanation offered above
+> was an explanation of noise; there was nothing to explain. Part 13 Section 3 has the measurement.
+
 `exp_only` and `softsign_only` remain unusable at `b = 1`: their information varies by `1e41` and
 `3e3` along a single trajectory, which fixing the median cannot address.
 
@@ -1460,6 +1467,163 @@ same thing and the rule does not capture it.
    so quoting it as a `7/10` rule would be circular. Its honest status is a hypothesis with a stated
    mechanism, and Parts 1, 1b, 4b and 6 are where it could be tested.
 
+# Part 13: Optimal proposals beyond the linear-Gaussian case
+
+Part 3 rescued the `M < d` particle filter with the **locally optimal proposal** of Doucet et al.
+(2000), which samples from `p(x_t | x_{t-1}, y_t)` instead of from the prior transition. That rescue
+leans on a closed form that exists only because the model is linear-Gaussian. Part 13 asks what is
+left of it once `f` is nonlinear, so that the conditional has no closed form and the incremental
+weight no longer collapses to `p(y_t | x_{t-1})`.
+
+Four proposals, in `d = 1` where `grid_filter_obs` gives an exact benchmark: the **bootstrap** filter
+of Parts 1-9; an **exact** locally optimal proposal computed by inverting a CDF on a local grid --
+unaffordable in `d > 1`, and included as a *ceiling* rather than a method; a **linear** proposal from
+linearising `f` at each particle's prior mean, which is the textbook EKF proposal; and a **mixture**
+from linearising at every local maximum of the likelihood. Twenty datasets, paired within dataset,
+scored by the Kolmogorov distance of Part 8.
+
+### The cell it was sent to investigate did not need investigating
+
+Part 9 named `sq_only` at `b = 0.9` because its error scaled at `-0.342` rather than `-0.5`. Over 12
+datasets the paired slope is **`-0.5007 +- 0.0207`**: `t = -0.07` from `-0.5`, `t = -15.00` from
+`-0.342`, and not one of the 12 datasets above `-0.40`. The claim is withdrawn above.
+
+That is the **sixth** single-dataset claim in this repository to fail a multi-dataset test, and the
+third of the six to be a *shape* claim -- a slope, a rate, a location. Part 12's corrected rule flags
+exactly that category, and this is the first time it has predicted something it was not derived
+from, which is what next-steps item 5 asked for.
+
+### The rescue is real, and smaller than in the linear-Gaussian case
+
+At `N = 1000`, as `KS(bootstrap) / KS(proposal)` paired within each of 20 datasets:
+
+| cell | `exact` | `linear` | `mixture` |
+|---|---|---|---|
+| `sq_only`, `b = 0.9` | **`1.706 +- 0.120`** | `1.415 +- 0.058` | `1.321 +- 0.087` |
+| `abs_only`, `b = 1` | `1.524 +- 0.167` | `1.446 +- 0.359` | `1.595 +- 0.334` |
+| `abs_only`, `b = 0.9` | `1.249 +- 0.062` | **`0.837 +- 0.060`** | `1.247 +- 0.058` |
+| `lin_xx`, `b = 0.9` | `1.403 +- 0.034` | `1.399 +- 0.027` | `1.413 +- 0.034` |
+
+The ceiling is `1.25x` to `1.71x`, well short of Part 3's linear-Gaussian rescue, and the reason is
+in the ESS: the bootstrap filter here already runs at `ESS/N = 0.44-0.56`, because Part 9 holds each
+`f`'s observation precision fixed rather than letting the sharp ones dominate. A proposal that reads
+`y_t` before moving the particles helps in proportion to how sharp the likelihood is, and these are
+deliberately not sharp.
+
+One linearisation recovers **`68% +- 7%`** of the ceiling in log KS -- except where the posterior is
+bimodal, where it is **worse than doing nothing**: `0.837 +- 0.060` on `abs_only` at `b = 0.9`, a 16%
+loss, because linearising `|x|` at the prior mean commits the proposal to whichever branch the mean
+sits nearer. Linearising at *both* modes gives `1.247` against the ceiling's `1.249`. Where the mode
+structure is the problem, covering the modes is the whole fix.
+
+On a linear `f` all three agree at `1.40 +- 0.03`, as they must: linearisation is exact there, so the
+three constructions are one filter. That control is what makes the spread above approximation error
+rather than implementation noise.
+
+### The approximations buy a constant and sell the rate
+
+| `sq_only`, `b = 0.9` | paired slope | `t` vs `-0.5` | max weight slope | max weight at `N = 16000` |
+|---|---|---|---|---|
+| `bootstrap` | `-0.5007 +- 0.0207` | `-0.07` | `-0.946 +- 0.019` | `0.00042` |
+| `exact` | `-0.5049 +- 0.0137` | `-0.71` | `-0.885 +- 0.006` | `0.00040` |
+| `linear` | **`-0.4414 +- 0.0165`** | **`+6.94`** | **`-0.490 +- 0.024`** | **`0.00360`** |
+| `mixture` | **`-0.4419 +- 0.0114`** | **`+10.01`** | **`-0.525 +- 0.028`** | `0.00325` |
+| `linear t_5` | `-0.5015 +- 0.0102` | `-0.30` | `-0.809 +- 0.004` | `0.00084` |
+| `mixture t_5` | `-0.4954 +- 0.0105` | `+0.87` | `-0.801 +- 0.007` | `0.00100` |
+
+The two **approximate** proposals lose about `0.06` of slope at `t = 6.9` and `t = 10.0`; the
+**exact** one does not move. That the exact proposal holds the rate is what rules out the
+measurement as the cause. At `b = 1` the same split is wider: `linear` fits `-0.3550 +- 0.0470`
+there, and is already *behind* the bootstrap filter at `N = 16000` (`0.0309` against `0.0278`) having
+been well ahead at `N = 250`.
+
+**The mechanism was written down before it was measured.** The Gaussian component has variance
+`v = (1/Q + tau)^-1 < Q` whenever `f` carries local information, so the importance ratio
+`p(x | x_{t-1}) G_t(x) / q(x)` grows like `exp((1/v - 1/Q) x^2 / 2)` in the tails. The proposal is
+**thinner than the target it is correcting**, which is the one thing an importance distribution must
+never be, and an unbounded ratio may have infinite variance. The independent symptom confirms it:
+`1/N` at `N = 16000` is `6.25e-05`, and the heaviest normalised weight is **fifty-eight times** that
+and falling at `N^-0.49` instead of `N^-0.95`.
+
+**Giving each component `t_5` tails at the same variance repairs it, for nothing.** The rate returns
+(`-0.5015 +- 0.0102`), the max-weight slope moves to `-0.81`, and the filter is *more accurate at
+every `N` measured* -- `0.01030` against `0.01320` at `N = 16000`, a 22% reduction. Nothing was
+fitted: `nu = 5` is the smallest round value with a variance to rescale, and only the tails change.
+
+### Cost inverts the ranking
+
+| proposal | cost per step | accuracy gain | what that budget buys as particles | wins? |
+|---|---|---|---|---|
+| `exact` | `31.0x` | `1.706x` | `5.578x` | no |
+| `mixture` | `7.4x` | `1.321x` | `2.728x` | no |
+| `mixture t_5` | `7.8x` | `1.394x` | `2.805x` | no |
+| `linear` | `1.5x` | `1.415x` | `1.239x` | **yes** |
+| `linear t_5` | `1.8x` | `1.521x` | `1.336x` | **yes** |
+
+The exponent is measured, not assumed: the bootstrap filter's own slope is `-0.5007`, so `x` times
+the cost buys `x^0.501`. **The cheapest approximation is the only one that pays for itself**, and
+read with the section above, `linear t_5` is the single variant that wins on cost *and* keeps the
+rate. That is the one line worth taking away.
+
+### What generalises: it helps where the filter is broken, and hurts where it is not
+
+Mean paired ratio over the whole of Part 9's group C plus a linear control:
+
+| | `exact` | `linear` | `mixture` | `linear t_5` | `mixture t_5` |
+|---|---|---|---|---|---|
+| `b = 0.9` (11 functions) | **`1.39`** | `0.92` | `0.84` | `1.00` | `0.90` |
+| `b = 1` (9 functions) | **`1.96`** | `1.07` | `1.51` | `1.05` | `1.37` |
+
+The exact proposal helps in **every one of twenty cells**, by `1.07x` to `6.91x`. The approximations
+average a coin flip at `b = 0.9`, with four outright disasters: `cos_only` under `mixture` at
+**`0.05 +- 0.00`**, twenty times worse than doing nothing, then `xpluscos_only` at `0.37`,
+`tanh_only` at `0.39` and `exp_only` under `linear` at `0.40`. Two causes, both intelligible --
+a periodic or flat likelihood defeats a fixed budget of three modes (the mixture places almost no
+density where the posterior actually is), and linearising `e^x` gives a near-zero proposal variance
+at a point the linearisation got wrong.
+
+Where they earn their place is where the bootstrap filter is failing badly. The worst cell in the
+project is `log1px2_only` at `b = 1`, with a bootstrap distance of `0.30481` against the `0.047`
+floor the rest of Part 9's matrix sits at. There the crude `mixture` scores **`7.96 +- 1.68`** and
+**beats the exact proposal's** `6.91 +- 1.41`. So: **the gain from approximating the optimal proposal
+scales with how far the bootstrap filter is from its own sampling limit.** At the limit there is
+nothing to win and a badly shaped proposal can only lose.
+
+### One thing a proposal cannot fix
+
+Part 9's bimodality penalty grows with the mode separation `2|x_t|`. Splitting the per-step error by
+`|x_t|` over 19 datasets, the ratio between the `|x| > 8` and `|x| < 2` bins is `2.94 +- 0.68`
+(bootstrap), `2.80 +- 0.48` (exact), `2.07 +- 0.40` (linear) and `2.30 +- 0.83` (mixture) --
+**statistically indistinguishable**. Every proposal shifts the curve down; none flattens it. A
+locally optimal proposal is local *in time* by construction, and what resolves the sign of `x_t` when
+the modes are fifty apart is the path. That is smoothing, not filtering, and it is next-steps item 2.
+
+### The screen scored 3 of 7
+
+Seven predictions were registered before the runs and four missed, each informatively: nothing was
+supposed to help at `b = 1` (it does); `mixture` was supposed to beat `linear` there (`+0.149 +- 0.298`,
+consistent with zero -- the effect is cleanly visible at `b = 0.9` instead, where the error bars are
+three to six times narrower); the approximations were supposed to keep the `-0.5` rate (the most
+useful miss, since it produced the mechanism and the fix); and nothing was supposed to beat the
+matched-cost bootstrap filter (the cheap proposals do).
+
+### Limitations
+
+- **`d = 1` only.** Both the exact proposal and the exact benchmark need the grid. The tail-weight
+  argument is algebra about `v < Q` and holds in any dimension, but it has been *measured* in one.
+- **The mixture's mode budget is fixed at three**, and all four disasters above are cases where that
+  is the wrong number. Keeping every mode within the prior's reach is the obvious repair, untested.
+- **`nu = 5` was not tuned.** Whether the optimum is `3` or `30`, and whether it depends on `f`, is
+  open. The only claim is that moving from infinite to `5` degrees of freedom restores the rate.
+- **Two decades of `N`**, the same limitation item 12 raises about Part 11. The infinite-variance
+  reading rests on the independent max-weight measurement rather than on the slope alone.
+- **One potential.** Everything here is Gaussian, and a Student-t potential has heavier tails than
+  any Gaussian proposal can match, so Section 6's balance would plausibly shift.
+- **The `b = 1` cells remain noisy**: ratio CIs of `+-0.17` to `+-0.36` against `+-0.06` at
+  `b = 0.9`, on 20 datasets. Several questions are answered at `b = 0.9` instead, and said so.
+
+---
+
 ## Next steps
 
 Items 1-3 of the original plan (long horizons, many-dataset error bars, better proposals) are **done
@@ -1467,7 +1631,9 @@ in Part 3**; varying `F` across the stability threshold is **done in Part 5**. M
 detectability boundary, and asking whether a better proposal helps where the posterior is unbounded,
 are **done in Part 10** -- the first by showing the boundary is not in `M` at all. Error bars on the
 rest of Part 2 are **done in Part 11**, where two more of its claims fell, and on Parts 2b, 4 and 5
-in **Part 12**, where two more fell and Part 5 came out clean. What genuinely remains:
+in **Part 12**, where two more fell and Part 5 came out clean. Optimal proposals beyond the
+linear-Gaussian case are **done in Part 13**, which withdrew a sixth single-dataset claim on the way
+and found that the textbook approximation gives up the `N^-1/2` rate. What genuinely remains:
 
 1. **Sequential Quasi-Monte Carlo (SQMC).** The `O(1/sqrt(N))` rate confirmed in every regime is the
    fundamental limit of plain Monte Carlo. SQMC replaces random draws with low-discrepancy points
@@ -1478,24 +1644,24 @@ in **Part 12**, where two more fell and Part 5 came out clean. What genuinely re
    should help most precisely where filtering struggled — the unmeasured coordinates of the `M < d`
    case, where later observations carry information about earlier unmeasured states. The Kalman
    smoother is again available as an exact benchmark.
-3. **Optimal proposals beyond the linear-Gaussian case.** Part 3's rescue relies on a closed form
-   that only exists because the model is linear-Gaussian. In a nonlinear model the proposal must be
-   approximated, so how much of the rescue survives is an open question. Part 9 sharpens the target:
-   the only failure mode it found twice over is a sharp likelihood that must be satisfied at two
-   well-separated modes, which is a **proposal** problem rather than a model one. `sq_only` at
-   `b = 0.9` and `|x|` at `b = 1` are the two cells to run.
+3. **An adaptive mode budget for the mixture proposal (from Part 13).** Part 13's four disasters
+   -- `cos_only` at `0.05`, `tanh_only` at `0.39`, `clip_only` at `0.13` -- are all cases where a
+   fixed budget of three likelihood modes is the wrong number: a periodic `f` has many and a flat one
+   has none. Keeping every mode inside the prior's reach, and falling back to the prior mean when
+   there are none, is a small change with a clear prediction attached: it should remove every cell
+   where the mixture scores below `1`, and change nothing elsewhere.
 4. **Locate where the `log T` dependence enters (from Part 8).** Part 8 settles the metric
    question -- the mean distance carries no horizon dependence at all, while the `99.9`th
    percentile grows like `(log T)^0.35-0.71`. Which quantile first picks up a `log T` term would
    sharpen the reading of Section 7.5.2, and costs nothing beyond rerunning Part 8's Section 6 on a
    finer quantile grid. The `d`-dimensional orthant Kolmogorov distance, rather than Part 8's
    marginal version, is the other loose end.
-5. **Test Part 12's corrected rule on Parts 1, 1b, 4b and 6.** Part 12 derived the rule from its own
-   three misses, so quoting it is circular until it predicts something it was not built on. Part 6 is
-   the natural target: its conclusions rest on 2 seeds at `T = 1e6` and 4 at `1e5` by its own
-   account, and it is built almost entirely on extreme-value statistics — which the rule now says are
-   dangerous only where they are free to move. A screen there is both a test of the rule and the last
-   unscreened part of the repo.
+5. **Test Part 12's corrected rule on Parts 1, 1b, 4b and 6.** Part 13 gave it its first
+   out-of-sample test and it passed, flagging Part 9's `-0.342` as a shape claim from one dataset,
+   which it was. That is one prediction. Part 6 is the natural next target: its conclusions rest on
+   2 seeds at `T = 1e6` and 4 at `1e5` by its own account, and it is built almost entirely on
+   extreme-value statistics -- which the rule now says are dangerous only where they are free to
+   move. A screen there is both a test of the rule and the last unscreened part of the repo.
 6. **A posterior-weighted curvature measure (from Part 9).** The relative residual of the affine fit
    predicts the cost of forcing the Gaussian reduction at a correlation of only `0.596`. Weighting
    the misfit by the posterior rather than by the sampling window would plausibly do better, and
@@ -1533,7 +1699,14 @@ in **Part 12**, where two more fell and Part 5 came out clean. What genuinely re
    rate deficit living in the unobserved coordinates, and doubling when they become strictly
    unobservable, at one `(d, M)` pair. Sweeping `M` from 1 to `d` would turn that into a curve and
    connect it directly to Part 10's geometric-in-`M` result.
-14. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
+14. **Tune the proposal's tail weight, and test it in `d > 1` (from Part 13).** `nu = 5` restored
+   the `N^-1/2` rate that the Gaussian approximation gave up, at no cost and without being tuned.
+   The optimum over `nu`, whether it depends on `f`, and whether the same repair works on the
+   `M < d` linear-Gaussian cells of Parts 2 and 3 -- where the proposal *is* exact, so the tails
+   should not matter and the prediction is "no change" -- are all cheap. The `d > 1` version needs
+   no exact benchmark, because the max-weight diagnostic of Part 13 Section 6 is computable without
+   one.
+15. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
    located empirically at `nu ~ 10` (Part 4 Section 8). What remains is the shape-fixed control --
    a Gaussian filter run at the Student-t's reduced scale -- and whether the `nu ~ 10` location can
    be derived rather than measured.

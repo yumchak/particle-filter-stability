@@ -1182,3 +1182,332 @@ def information_scale(fn, target=None, b=0.9, Q=1.0, T=4000, seed=0, eps=1e-5):
         # let the experiment record the consequence.
         return 1.0, med, lo, hi
     return float(med / target), med, lo, hi
+
+
+# ---------------------------------------------------------------------------
+# 10. Proposals beyond the linear-Gaussian case (Part 13)
+# ---------------------------------------------------------------------------
+#
+# Part 3 rescued the M < d particle filter with the LOCALLY OPTIMAL proposal
+# q(x_t | x_{t-1}, y_t) = p(x_t | x_{t-1}, y_t) of Doucet et al. (2000). That
+# rescue leans on a closed form which exists only because the model is
+# linear-Gaussian: once f is nonlinear the conditional has no closed form and
+# the proposal must be APPROXIMATED, with the incremental weight no longer
+# collapsing to p(y_t | x_{t-1}).
+#
+# Four proposals are implemented below for d = 1, which is where an exact
+# benchmark (`grid_filter_obs`) exists:
+#
+#   "bootstrap"  q = p(x_t | x_{t-1}).  The baseline of Parts 1-9. Reproduces
+#                `particle_filter_obs` bit-for-bit, which is checked rather
+#                than asserted.
+#   "exact"      q = p(x_t | x_{t-1}, y_t), computed NUMERICALLY on a local
+#                grid around each particle's prior mean and sampled by
+#                inverting the CDF. No practical filter in d > 1 could afford
+#                this; it is here as a CEILING -- it says how much the rescue
+#                would be worth if the approximation were free.
+#   "linear"     The textbook remedy: linearise f about the prior mean
+#                m_i = b x_{t-1}^i and use the Gaussian conditional of the
+#                linearised model. One mode by construction.
+#   "mixture"    The same linearisation performed at every local maximum of
+#                the likelihood, giving a Gaussian MIXTURE proposal. This is
+#                the one aimed at Part 9's finding that the only failure mode
+#                it found twice over is a sharp likelihood with two
+#                well-separated modes.
+#
+# For "linear" and "mixture" the proposal is not the true conditional, so the
+# incremental weight is the full importance ratio
+#
+#     w_t^i  proportional to  G_t(x_t^i) p(x_t^i | x_{t-1}^i) / q(x_t^i | ...)
+#
+# and the variance reduction is no longer guaranteed. Whether it survives the
+# approximation is the question Part 13 asks.
+
+
+def _scalar_jac(fn, x, eps=1e-5):
+    """df/dx at scalar points `x`, by central difference. (n,) -> (n, r)."""
+    x = np.asarray(x, dtype=float).ravel()
+    h = eps * np.maximum(1.0, np.abs(x))
+    up = fn((x + h).reshape(-1, 1))
+    dn = fn((x - h).reshape(-1, 1))
+    return (up - dn) / (2.0 * h).reshape(-1, 1)
+
+
+def _logsumexp(a, axis=-1):
+    mx = np.max(a, axis=axis, keepdims=True)
+    mx = np.where(np.isfinite(mx), mx, 0.0)
+    return (mx + np.log(np.sum(np.exp(a - mx), axis=axis, keepdims=True))).squeeze(axis)
+
+
+def likelihood_modes(fn, pot, Sigma, yt, half_width, n_grid=20001,
+                     n_modes=3, log_drop=25.0):
+    """Local maxima of x -> log G_t(x) on [-half_width, half_width].
+
+    The likelihood does not depend on x_{t-1}, so the modes are found ONCE per
+    time step and shared by all N particles. A plateau (round(x) between its
+    jumps, a saturated tanh) has no strict local maximum and returns nothing;
+    the caller then falls back to expanding about the prior mean, which is the
+    right behaviour -- a flat likelihood carries no information to steer by.
+    """
+    g = np.linspace(-half_width, half_width, n_grid).reshape(-1, 1)
+    L = np.linalg.cholesky(np.atleast_2d(Sigma))
+    off = np.zeros(fn.r) if fn.offset is None else np.asarray(fn.offset, float)
+    resid = np.linalg.solve(L, (np.asarray(yt, float) - fn(g)).T).T
+    lg = pot.log_weight(resid)
+    if not np.any(np.isfinite(lg)):
+        return np.empty(0)
+    peak = np.nanmax(lg[np.isfinite(lg)])
+    inner = lg[1:-1]
+    loc = (inner > lg[:-2]) & (inner > lg[2:]) & (inner > peak - log_drop)
+    idx = np.flatnonzero(loc) + 1
+    if idx.size == 0:
+        return np.empty(0)
+    idx = idx[np.argsort(-lg[idx])][:n_modes]
+    return g[idx, 0]
+
+
+def _linear_components(fn, pot, Sigma, yt, centres, m, Q):
+    """Gaussian proposal components from linearising f about each centre.
+
+    `centres` is (K,) expansion points, `m` is (N,) prior means. Returns
+
+        mstar  (N, K)  component means
+        vstar  (K,)    component variances
+        logal  (N, K)  unnormalised log component weights
+
+    The linearised model about centre c is y = f(c) + J(c)(x - c) + noise with
+    x ~ N(m_i, Q), so the component weight is the Gaussian predictive density
+
+        N( y ; f(c) + J(c)(m_i - c),  J(c) Q J(c)' + Sigma ),
+
+    which is exactly p(y_t | x_{t-1}^i) of the linearised model. Component
+    weights that are not comparable across components would bias the mixture
+    towards whichever branch happens to be listed first, so this is the piece
+    that has to be right.
+    """
+    Sig = np.atleast_2d(Sigma)
+    L = np.linalg.cholesky(Sig)
+    off = np.zeros(fn.r) if fn.offset is None else np.asarray(fn.offset, float)
+    yv = np.asarray(yt, float).ravel()
+    K, N = centres.size, m.size
+
+    fc = fn(centres.reshape(-1, 1))                     # (K, r)
+    J = _scalar_jac(fn, centres)                        # (K, r)
+    A = np.linalg.solve(L, J.T).T                       # (K, r) whitened J
+    tau = np.sum(A ** 2, axis=1)                        # (K,)
+    vstar = 1.0 / (1.0 / Q + tau)                       # (K,)
+
+    r0 = np.linalg.solve(L, (yv - fc).T).T               # (K, r)
+    info = np.sum(A * r0, axis=1)                        # (K,)  J'Sig^-1(y-f(c))
+    # Expanding about c rather than m shifts the information term by J'Sig^-1 J (c - m).
+    mstar = (m[:, None] + vstar[None, :]
+             * (info[None, :] + tau[None, :] * (centres[None, :] - m[:, None])))
+
+    # Predictive density of the linearised model, in log form.
+    logal = np.empty((N, K))
+    for k in range(K):
+        S = J[k][:, None] * Q * J[k][None, :] + Sig      # (r, r)
+        Lk = np.linalg.cholesky(S)
+        pred = fc[k] + J[k] * (m - centres[k])[:, None]  # (N, r)
+        u = np.linalg.solve(Lk, (yv - pred).T).T         # (N, r)
+        logal[:, k] = (-0.5 * np.sum(u ** 2, axis=1)
+                       - np.sum(np.log(np.diag(Lk))))
+    return mstar, vstar, logal
+
+
+def particle_filter_obs_prop(y, fn, pot, Sigma, b=1.0, Q=1.0, N=1000, x0=0.0,
+                             seed=0, ess_threshold=0.5, proposal="bootstrap",
+                             grid_half=8.0, grid_n=801, mode_half=None,
+                             mode_grid=20001, n_modes=3, prop_df=None,
+                             stat_fn=None, stat_every=1):
+    """Particle filter for a general scalar f under a choice of proposal.
+
+    See section 10's header for what the four proposals are and why. `d = 1`
+    only: the exact proposal and the exact benchmark both need the grid.
+
+    Parameters
+    ----------
+    proposal : {"bootstrap", "exact", "linear", "mixture"}
+    grid_half, grid_n : float, int
+        The "exact" proposal's local grid: `grid_n` nodes spanning
+        +- `grid_half` prior standard deviations about each particle's prior
+        mean. The prior confines the conditional to this window, so the only
+        resolution that matters is `grid_n`; it is swept in Part 13 Section 2.
+    mode_half, mode_grid, n_modes :
+        The "mixture" proposal's mode search. `mode_half` defaults to a window
+        wide enough for the state at the given `b`, matching the default of
+        `grid_filter_obs`.
+    prop_df : float or None
+        Tail weight of the "linear" and "mixture" components. `None` (default)
+        makes them Gaussian, which is the textbook construction. A finite
+        `prop_df > 2` makes each component a Student-t with that many degrees
+        of freedom, RESCALED to the same variance, so the proposal's centre
+        and spread are unchanged and only its tails are heavier.
+
+        This is not a cosmetic option. The Gaussian component has variance
+        v = (1/Q + tau)^-1 < Q, so the importance ratio
+
+            p(x | x_{t-1}) G_t(x) / q(x)  ~  exp( (x-m*)^2/2v - (x-m)^2/2Q )
+
+        is UNBOUNDED in the tails, and an unbounded ratio can have infinite
+        variance -- in which case the error no longer falls at N^-1/2 however
+        many particles are used. A t component dominates any Gaussian tail, so
+        the ratio is bounded and the rate is recoverable. Part 13 Section 6
+        measures whether that is what is happening.
+
+    Returns
+    -------
+    est, ess, resampled  (and `stats` if `stat_fn` is given), as in
+    `particle_filter_obs`.
+    """
+    if fn.d != 1:
+        raise ValueError("particle_filter_obs_prop is for d = 1 only")
+    if proposal not in ("bootstrap", "exact", "linear", "mixture"):
+        raise ValueError(f"unknown proposal: {proposal!r}")
+    if prop_df is not None and prop_df <= 2.0:
+        raise ValueError("prop_df must exceed 2 for the component variance "
+                         "to exist (the rescaling needs it)")
+
+    y = np.atleast_2d(np.asarray(y, dtype=float))
+    T, r = y.shape[0], fn.r
+    rng = np.random.default_rng(seed)
+    L = np.linalg.cholesky(np.atleast_2d(Sigma))
+    sq = math.sqrt(Q)
+
+    if mode_half is None:
+        mode_half = (8.0 * math.sqrt(Q / (1.0 - b * b)) + 10.0 if abs(b) < 1.0
+                     else 6.0 * math.sqrt(Q * max(T, 1)) + 10.0)
+
+    particles = np.full(N, float(x0))
+    weights = np.full(N, 1.0 / N)
+    est = np.zeros((T, 1))
+    ess = np.zeros(T)
+    resampled = np.zeros(T, dtype=bool)
+    stats = [] if stat_fn is not None else None
+
+    # The "exact" proposal's offsets and the prior log-density on them are the
+    # same at every step and for every particle: only the likelihood moves.
+    off = np.linspace(-grid_half * sq, grid_half * sq, grid_n)
+    log_prior_off = -0.5 * off ** 2 / Q
+    cellw = off[1] - off[0] if grid_n > 1 else 1.0
+
+    def loglik(xs):
+        resid = np.linalg.solve(L, (y[t] - fn(np.asarray(xs).reshape(-1, 1))).T).T
+        return pot.log_weight(resid)
+
+    for t in range(T):
+        m = b * particles                                  # prior means
+
+        if proposal == "bootstrap":
+            particles = m + sq * rng.standard_normal(N)
+            log_inc = loglik(particles)
+
+        elif proposal == "exact":
+            nodes = m[:, None] + off[None, :]               # (N, grid_n)
+            lw = log_prior_off[None, :] + loglik(nodes).reshape(N, grid_n)
+            rowmax = np.max(lw, axis=1, keepdims=True)
+            rowmax = np.where(np.isfinite(rowmax), rowmax, 0.0)
+            wgrid = np.exp(lw - rowmax)
+            tot = wgrid.sum(axis=1)
+            bad = ~(tot > 0) | ~np.isfinite(tot)
+            if np.any(bad):
+                # No node is possible: fall back to the prior for that particle
+                # and let the weight record the loss.
+                wgrid[bad] = 1.0
+                tot[bad] = grid_n
+            cdf = np.cumsum(wgrid, axis=1) / tot[:, None]
+            u = rng.random(N)
+            # Row-wise inverse CDF, vectorised: a Python loop over N searches
+            # dominated the runtime for no reason.
+            j = np.clip((cdf < u[:, None]).sum(axis=1), 0, grid_n - 1)
+            # Uniform jitter inside the chosen cell: the grid approximates a
+            # density, so sampling its nodes exactly would quantise the cloud.
+            particles = (m + off[j]
+                         + (rng.random(N) - 0.5) * cellw)
+            log_inc = np.log(tot) + rowmax.ravel() + math.log(cellw)
+            log_inc[bad] = -np.inf
+
+        else:
+            if proposal == "linear":
+                centres = None
+            else:
+                centres = likelihood_modes(fn, pot, Sigma, y[t], mode_half,
+                                           n_grid=mode_grid, n_modes=n_modes)
+            if centres is None or centres.size == 0:
+                # Expand about each particle's own prior mean. This is the
+                # textbook EKF proposal; for "mixture" it is the graceful
+                # degradation when the likelihood has no strict local maximum.
+                J = _scalar_jac(fn, m)                      # (N, r)
+                A = np.linalg.solve(L, J.T).T
+                tau = np.sum(A ** 2, axis=1)
+                vst = 1.0 / (1.0 / Q + tau)
+                r0 = np.linalg.solve(L, (y[t] - fn(m.reshape(-1, 1))).T).T
+                mst = m + vst * np.sum(A * r0, axis=1)
+                if prop_df is None:
+                    particles = mst + np.sqrt(vst) * rng.standard_normal(N)
+                    log_q = (-0.5 * (particles - mst) ** 2 / vst
+                             - 0.5 * np.log(vst))
+                else:
+                    sc = np.sqrt(vst * (prop_df - 2.0) / prop_df)
+                    particles = mst + sc * rng.standard_t(prop_df, size=N)
+                    log_q = (-0.5 * (prop_df + 1.0)
+                             * np.log1p(((particles - mst) / sc) ** 2 / prop_df)
+                             - np.log(sc))
+            else:
+                mst, vst, logal = _linear_components(fn, pot, Sigma, y[t],
+                                                     centres, m, Q)
+                logal = logal - _logsumexp(logal, axis=1)[:, None]
+                al = np.exp(logal)
+                al /= al.sum(axis=1, keepdims=True)
+                uk = rng.random(N)
+                k = np.clip((np.cumsum(al, axis=1) < uk[:, None]).sum(axis=1),
+                            0, centres.size - 1)
+                rows = np.arange(N)
+                if prop_df is None:
+                    particles = (mst[rows, k]
+                                 + np.sqrt(vst[k]) * rng.standard_normal(N))
+                else:
+                    sck = np.sqrt(vst * (prop_df - 2.0) / prop_df)
+                    particles = (mst[rows, k]
+                                 + sck[k] * rng.standard_t(prop_df, size=N))
+                # The proposal density is the WHOLE mixture, not the chosen
+                # component: using the component alone would be a different
+                # (and wrong) importance ratio.
+                if prop_df is None:
+                    lq = (logal - 0.5 * np.log(vst)[None, :]
+                          - 0.5 * (particles[:, None] - mst) ** 2 / vst[None, :])
+                else:
+                    z = (particles[:, None] - mst) / sck[None, :]
+                    lq = (logal - np.log(sck)[None, :]
+                          - 0.5 * (prop_df + 1.0) * np.log1p(z ** 2 / prop_df))
+                log_q = _logsumexp(lq, axis=1)
+            log_prior = -0.5 * (particles - m) ** 2 / Q
+            log_inc = loglik(particles) + log_prior - log_q
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_w = log_inc + np.log(weights)
+        log_w = np.where(np.isfinite(log_w), log_w, -np.inf)
+        mx = np.max(log_w)
+        if not np.isfinite(mx):
+            weights = np.full(N, 1.0 / N)
+        else:
+            w = np.exp(log_w - mx)
+            total = w.sum()
+            weights = np.full(N, 1.0 / N) if not (total > 0) else w / total
+
+        est[t, 0] = float(_dot(weights, particles.reshape(-1, 1))[0])
+        ess[t] = effective_sample_size(weights)
+
+        if stats is not None and t % stat_every == 0:
+            stats.append(stat_fn(t, particles.reshape(-1, 1), weights))
+
+        if ess[t] < ess_threshold * N:
+            idx = systematic_resample(weights, rng)
+            particles = particles[idx]
+            weights = np.full(N, 1.0 / N)
+            resampled[t] = True
+
+    out = [est, ess, resampled]
+    if stats is not None:
+        out.append(np.asarray(stats))
+    return tuple(out)
