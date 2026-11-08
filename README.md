@@ -39,6 +39,7 @@ decaying and starts to explode.
 | `08_kolmogorov_distance.ipynb` | **Part 8.** Replaces the mean distance with the Kolmogorov distance -- bounded, scale-free, calibratable -- and shows Part 6's growing maximum is an extreme-value effect, not degradation: the per-step distribution is stationary over `10^6` steps. |
 | `09_nonlinear_observations.ipynb` | **Part 9.** 39 nonlinear observation functions `f` x 4 potentials x 3 filter variants, scored against an exact grid posterior in one and two dimensions. The shape of `f` costs nothing; *assuming* the Gaussian reduction when it fails costs up to `16x`. |
 | `10_detectability_boundary.ipynb` | **Part 10.** Sweeps `M` from 1 to `d` above the stability threshold, as Part 5 asked. Finds no boundary in `M` -- `M = d-1` is as bad as `M = 1` -- and that detectability, an exact test on `(F, H)`, decides it in `84/84` cells. Then the first failure of time-uniform stability in the project. |
+| `11_part2_error_bars.ipynb` | **Part 11.** The six Part 2 claims Part 3 did not re-test, over 30 datasets instead of one. Two fall: the `O(1/sqrt N)` rate does **not** hold at `M < d`, and the `M < d` cloud is not healthier. Both failures trace to the same cause, and the rate deficit sits entirely in the unobserved directions. |
 | `filters.py` | Core filter code for Parts 1–3, 5, 6 and 10: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions, the Kolmogorov distance against a Gaussian posterior (Part 8), and Part 10's detectability tools -- the observability matrix and its subspaces, the Hautus test, and the data-free covariance recursion. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 | `observation_models.py` | Parts 7-9: arbitrary observation functions `f` (a 41-entry registry with **measured** rather than asserted structure), four potential shapes including the paper's own, the Section 5.3.2 projection, the affine surrogate, the information-equalising control, and exact grid benchmarks for `d = 1` and `d = 2`. |
@@ -191,6 +192,37 @@ these numbers that compares fairly across regimes.
 > reaches `r_eff = r*d/M`; and the original claim **should** hold under a **Student-t likelihood**,
 > where the discarded component stays inside the weights instead of cancelling.
 
+> **Correction (added after Part 11).** Every claim and every table entry above came from **one
+> dataset**, `DATA_SEED = 42`, averaged over ten particle-filter seeds — which averages away the
+> filter's Monte Carlo noise and leaves the dataset's contribution untouched. Part 3 re-tested three
+> claims over 30 datasets and corrected one. Part 11 tested the remaining six and **two more do not
+> survive**:
+>
+> - **"The `O(1/sqrt(N))` rate survives in every regime [...] being under-observed costs a constant
+>   factor, not a worse convergence rate" — withdrawn.** Over 30 datasets `M = d` and `M > d` sit on
+>   `-0.5` (`-0.5027 +- 0.0057`, `-0.5034 +- 0.0090`) but `M < d` gives `-0.4745 +- 0.0108`, which is
+>   `4.6` standard errors from `-0.5` and `4.5` from `M = d`. The penalty is correspondingly not
+>   constant: it rises `1.93 -> 2.23` over `N = 50` to `5000` (paired `t = +4.4`). The practical
+>   reading survives — the rate is worse by 5%, so the penalty reaches `3x` only near `N = 1e7` —
+>   but the stated claim does not.
+> - **"The `M < d` cloud is in fact *healthier* (min ESS 83)" — withdrawn.** Over 30 datasets the
+>   minimum ESS is `24.2 +- 4.5` for `M < d` against `21.1 +- 4.3` for `M = d`: `|t| = 0.98`, and
+>   `|t| = 0.06` on the mean ESS. The two are indistinguishable. The `82.7` above lies outside the
+>   entire range of the 30 fresh datasets (`8.0`-`54.4`). What survives is the weaker statement that
+>   `M < d` does not *degrade* the cloud, which still makes the point the claim was written for.
+>
+> Two further amendments. The `2.6x` concentration of error in the unmeasured coordinates measures
+> `2.86 +- 0.11`, but `1.834x` of it is the posterior being wider there — data-free, so exact — and
+> the filter's own share is `1.56 +- 0.06`. And the quoted ESS figures in the `d` sweep ("never below
+> ~90", "pinned near 530") measure `56.0` and `506-526`.
+>
+> **The two failures have one cause.** `min ESS` and `max gap` are **extreme-value** statistics: they
+> vary by 37-82% across datasets where the time-averaged quantities vary by 3-11%, and the minimum
+> ESS additionally falls by `4.7-5.2x` from `T = 100` to `T = 1600` while the mean ESS moves by under
+> `1%`. Both misled — `min ESS` on a headline claim, `max gap` on its ordering, which reverses end to
+> end. The table's other five orderings, and the mean-based factors, reproduce. Treat the two
+> extreme-value columns above as unsupported.
+
 ---
 
 # Part 2b: The same study at the stability threshold (`rho(F) = 1`)
@@ -244,7 +276,7 @@ particle filter**. Part 3 attacks all three assumptions. Two claims survive; one
 | Part 2 claim | Verdict |
 |---|---|
 | Error stays flat over time | **Confirmed and strengthened.** Flat to within 3% over `T = 2000`, with drift of a fraction of a percent per 1000 steps, inconsistent in sign across regimes. |
-| Regimes perform near-identically relative to posterior width | **Corrected.** Over 30 datasets the relative gaps are `0.055`, `0.059`, `0.078` and every pairwise difference is statistically clear (`\|t\|` = 2.6, 12.6, 9.7). `M < d` is genuinely ~40% worse. The ordering survives; "almost identical" does not. |
+| Regimes perform near-identically relative to posterior width | **Corrected.** Over 30 datasets the relative gaps are `0.055`, `0.059`, `0.078` and every pairwise difference is statistically clear (`\|t\|` = 2.6, 12.6, 9.7). `M < d` is genuinely ~40% worse. The ordering survives; "almost identical" does not. *(Part 11 adds: the ordering holds under the Kolmogorov distance too, but the `40%` is metric-dependent — the same cells give `15%` under the bounded metric, and there `M > d` and `M < d` become indistinguishable.)* |
 | Degeneracy is driven by `M`, not `d` | **Confirmed, and explained.** Reproducible with non-overlapping error bars — but it is a property of the *bootstrap proposal*, not of particle filtering. |
 
 ### The proposal result
@@ -1113,13 +1145,154 @@ faster than the posterior's own uncertainty.
    factors of 3 to 80, because summing the information available at each past time over-counts what
    is actually recoverable. That remains open.
 
+---
+
+---
+
+# Part 11: Error bars on the rest of Part 2
+
+Part 2 produced nine claims and a six-column summary table, all from **one simulated dataset**
+(`DATA_SEED = 42`) averaged over ten particle-filter seeds. That design averages away the filter's
+own Monte Carlo noise and leaves the *dataset's* contribution untouched: a quantity that happens to
+be unusual on seed 42 stays unusual however many filter seeds are added.
+
+Part 3 re-tested three of those claims over 30 independent datasets, and **one of the three needed
+correcting**. This notebook tests the remaining six, at Part 2's own settings (`T = 100`,
+`N = 1000`, `b = 0.9`) with Part 3's method (`data_seed = 100 + k`, `pf_seed = k`, `k = 0..29`, 95%
+CIs, Welch's `t`). Where a claim concerns the *shape* of a curve — a slope, a ratio, a flattening —
+the quantity is fitted **per dataset** and the 30 fits summarised, which is a paired design and
+strictly better than one fit through 30-dataset averages.
+
+### Two more claims do not survive
+
+- **The `O(1/sqrt(N))` rate does not hold in every regime.** `M = d` and `M > d` sit on `-0.5`
+  (`-0.5027 +- 0.0057` and `-0.5034 +- 0.0090`, `|t| < 1` against theory). `M < d` gives
+  **`-0.4745 +- 0.0108`**: `4.63` standard errors from `-0.5`, and `4.53` from `M = d` on 44 degrees
+  of freedom. Part 2's single-dataset fit of `-0.507` for that case was closer to the truth for the
+  two regimes it was *not* describing than for the one it was.
+- **The second half goes with it.** If the rates differ the penalty cannot be a constant factor, and
+  it is not: the `M < d` / `M = d` ratio runs `1.928 -> 2.021 -> 2.076 -> 2.227` over `N = 50` to
+  `5000`, a trend of `+0.062` per e-fold with paired `t = +4.37`. "Roughly `2x`" is right at
+  `N = 1000` and becomes wrong as `N` grows.
+- **Whether that matters is a separate question, and the honest answer is: a little.** Part 2's
+  framing was "a worse constant is merely expensive, a worse rate would be fatal", which makes this
+  the fatal case. The rate is worse by 5%: extrapolated, the penalty reaches `3x` around `N = 1e7`.
+  The claim as stated is wrong; the decision it supported — `M < d` is expensive, not hopeless —
+  stands.
+- **The `M < d` cloud is not healthier.** Part 2 reported minimum ESS `82.7` against `29.3` and
+  `15.6`. Over 30 datasets: `24.18 +- 4.50` against `21.08 +- 4.26` and `12.35 +- 3.60`, giving
+  `|t| = 0.98` on the minimum and `|t| = 0.06` on the mean ESS. `M < d` and `M = d` are
+  **indistinguishable**, not ordered — and `82.7` lies outside the entire observed range of the 30
+  fresh datasets (`8.0` to `54.4`). It was not a noisy estimate of `24.18`; it was a value 30
+  independent draws never came near.
+
+### One claim needed its attribution split rather than its number corrected
+
+The `M < d` error does concentrate in the unmeasured coordinates, at `2.86 +- 0.11` rather than
+`2.6`. But the posterior is `1.834x` wider there — exactly, since the covariance recursion is
+data-free — so most of the `2.86` is the model being harder, not the filter being worse. Dividing it
+out leaves the filter's own share at `1.562 +- 0.061`, `t = 18.1` against 1. **Genuinely worse by
+56%, not by 186%.** Part 2's prose half-knew this ("irreducible uncertainty [...], not particle
+degeneracy") without separating the two numerically.
+
+### Three survive, one of them better stated than before
+
+- **The `d`-sweep factor reproduces almost exactly:** `1.921 +- 0.099` against Part 2's `1.94`
+  (endpoints `0.0357 +- 0.0013` to `0.0680 +- 0.0025`).
+- **The flattening is now established rather than asserted.** Increments of `+0.0271 +- 0.0046` over
+  `d = 1-4` and `+0.0051 +- 0.0045` over `d = 4-16`; paired `t = +4.99`, with **28 of 30 datasets**
+  showing the second increment smaller. A single dataset could not have supported a claim about the
+  second difference of a five-point curve, and this one happened to be right.
+- **Five of the table's six regime orderings survive.** The exception is `max gap`, where Part 2 read
+  `M > d < M < d < M = d` and the 30-dataset means give `M = d < M > d < M < d` — a reversal of both
+  ends.
+- What fails *inside* the surviving claims are the quoted ESS figures: "min ESS never below ~90" and
+  "mean ESS pinned near 530" measure `56.0 +- 14.7` and `506-526`.
+
+### The failures have one cause, and it is not "single datasets are noisy"
+
+Part 2's quantities fall into two groups an order of magnitude apart:
+
+| quantity | sd / mean across datasets | max / min over 30 |
+|---|---|---|
+| `mean ESS`, `resampled` | 0.016-0.045 | 1.08-1.25 |
+| `mean gap`, `rel gap` | 0.088-0.108 | 1.38-1.54 |
+| `max gap` | 0.372-0.497 | **4.26-7.27** |
+| `min ESS` | 0.520-0.815 | **6.79-20.90** |
+
+Time-averaged quantities reproduce their orderings and their factors. The two **extreme-value**
+quantities vary by 37-82%, and both misled: the minimum ESS on a headline claim, the maximum gap on
+its ordering. Of the 15 sample-statistic table entries, **13 fall outside the 95% CI** of the
+30-dataset mean, and all nine gap entries are **low** by 8-20%, because dataset 42 is a quiet
+dataset for all three regimes at once — which no amount of filter-seed averaging can reveal.
+
+`post_sd` is the one row a single dataset established *exactly*: zero spread across the 30, because
+the Kalman covariance recursion never reads the data (Part 10 Section 1 checks this to bit
+equality). The difficulty of each regime was known exactly; only the filter's performance on it
+needed averaging.
+
+**And the minimum ESS is worse than noisy — it is horizon-dependent.** Over the same datasets it
+falls by `4.7-5.2x` from `T = 100` to `T = 1600` while the mean ESS moves by `0.1-0.8%`. It is a
+minimum over a stationary series, so it falls with the length of the series by definition. This is
+Part 6's growing maximum and Part 8's extreme-value resolution of it, now recognised in the
+cloud-health diagnostic as well as in the error: **the minimum ESS over a run is not a property of a
+filter, and no number of datasets fixes that — only quoting it at a stated horizon, or quoting the
+mean instead, does.**
+
+### The one new mechanism
+
+Fitting the `N`-slope separately by coordinate at `d = 4`, `M = 2` locates the broken rate claim
+exactly, and Part 10 supplies the language:
+
+| coupling | observability rank | measured coords | unmeasured coords | paired difference |
+|---|---|---|---|---|
+| 0.3 | 4 / 4 | `-0.5035 +- 0.0051` | `-0.4670 +- 0.0143` | `+0.0365`, `t = +4.63` |
+| 0.0 | **2 / 4** | `-0.5111 +- 0.0088` | **`-0.4413 +- 0.0171`** | `+0.0698`, `t = +7.89` |
+
+The measured coordinates converge at exactly `-0.5` in both models. The **entire** deficit sits in
+the coordinates the data do not pin down, and it **doubles** when those go from under-observed
+(rank 4, the coupling eventually reveals them) to strictly unobservable (rank 2, where `F = 0.9 I`
+never rotates them into view). Both models are detectable in Part 10's sense, since `|lambda| = 0.9`
+keeps the posterior bounded either way; only the directness of the information changes.
+
+So Part 2's broken claim is the same phenomenon Part 10 Section 8 found at the threshold, seen at
+`b = 0.9` where it costs 5% of the convergence rate instead of all of it. **Parts 2, 10 and 11
+describe one thing: the particle filter's error behaves differently in directions the observations
+do not constrain, and how differently depends on how completely they fail to constrain them.**
+
+### Does any verdict depend on Part 2's metric?
+
+No. Re-scored with Part 8's Kolmogorov distance on the same 30 datasets, the ordering is
+`M = d < M > d < M < d` under both metrics, with `|t| = 8.67` and `9.38` separating `M = d` from the
+others. Two notes anyway: the **magnitude** is metric-dependent — Part 3's "`M < d` is ~40% worse" is
+`1.402` under the relative gap and `1.152` under the Kolmogorov distance, where `M > d` and `M < d`
+become indistinguishable (`|t| = 0.60`). And the smoke test of this very notebook, run with 4
+datasets instead of 30, printed `THE TWO METRICS DISAGREE` on that same `|t| = 0.60` difference — an
+apt accident in a notebook arguing for error bars, and caught only by running the design it argues
+for.
+
+### Limitations
+
+1. **Part 2's settings only** (`T = 100`, `N = 1000`, `b = 0.9`), deliberately, so the comparison is
+   clean. Nothing here says the surviving claims hold elsewhere.
+2. **The rate result rests on four values of `N`** (`50` to `5000`), the grid Part 2 used. A
+   shallower slope over two decades could be a slow transient rather than an asymptotic rate;
+   distinguishing them needs `N` up to `1e5`-`1e6`, which was not run. The extrapolation to `N = 1e7`
+   inherits that caveat and is an order of magnitude, not a prediction.
+3. **The mechanism in Section 2b is one `(d, M)` pair.** The sweep over `M` that would turn it into a
+   curve was not run.
+4. **Per-dataset slopes are treated as 30 independent observations**, ignoring their own estimation
+   error. For the slopes this is conservative — that error inflates the variance and widens the
+   intervals — so the significant results stay significant.
+5. **Part 2b has not been given error bars.** Its numbers rest on the same single-dataset design.
+
 ## Next steps
 
 Items 1-3 of the original plan (long horizons, many-dataset error bars, better proposals) are **done
 in Part 3**; varying `F` across the stability threshold is **done in Part 5**. Mapping the
 detectability boundary, and asking whether a better proposal helps where the posterior is unbounded,
-are **done in Part 10** -- the first by showing the boundary is not in `M` at all. What genuinely
-remains:
+are **done in Part 10** -- the first by showing the boundary is not in `M` at all. Error bars on the
+rest of Part 2 are **done in Part 11**, where two more of its claims fell. What genuinely remains:
 
 1. **Sequential Quasi-Monte Carlo (SQMC).** The `O(1/sqrt(N))` rate confirmed in every regime is the
    fundamental limit of plain Monte Carlo. SQMC replaces random draws with low-discrepancy points
@@ -1142,10 +1315,11 @@ remains:
    sharpen the reading of Section 7.5.2, and costs nothing beyond rerunning Part 8's Section 6 on a
    finer quantile grid. The `d`-dimensional orthant Kolmogorov distance, rather than Part 8's
    marginal version, is the other loose end.
-5. **Error bars on the rest of Part 2.** Part 3 re-examined one single-dataset claim and it needed
-   correcting; the others deserve the same treatment. Parts 7 and 9 add a reason to: both found the
-   effects that survive a fixed-precision control to be small enough that single-dataset scatter
-   could hide or invent one.
+5. **Error bars on Part 2b, and on Parts 4 and 5 (from Part 11).** Part 11 gave Part 2 the 30-dataset
+   treatment and two more claims fell, both of them resting on extreme-value statistics. Part 2b was
+   built on the same single-dataset design and has not been re-tested; Part 5 Section 7b used only 4
+   seeds and flagged its own `d = 16` ratio as within noise. The screen is cheap and now has a known
+   hit rate of 3 in 9.
 6. **A posterior-weighted curvature measure (from Part 9).** The relative residual of the affine fit
    predicts the cost of forcing the Gaussian reduction at a correlation of only `0.596`. Weighting
    the misfit by the posterior rather than by the sampling window would plausibly do better, and
@@ -1174,7 +1348,16 @@ remains:
    diverges at a rate climbing towards `2 log b`. A reference run in extended precision would
    separate "the filter cannot use information carried at `1e-23`" from "double precision cannot
    represent it" -- the first is a real limit on filtering, the second an artefact.
-12. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
+12. **Push the `N` grid to settle the `M < d` rate (from Part 11).** The shallower slope
+   (`-0.4745 +- 0.0108` against `-0.5`) is fitted over `N = 50` to `5000`. Two decades cannot
+   separate an asymptotic rate from a slow transient, and the distinction decides whether `M < d`
+   has a genuinely worse rate or merely a penalty that is still settling. `N` up to `1e6` at
+   `T = 100` is affordable.
+13. **Sweep `M` for the per-coordinate rate (from Part 11).** Part 11 Section 2b shows the entire
+   rate deficit living in the unobserved coordinates, and doubling when they become strictly
+   unobservable, at one `(d, M)` pair. Sweeping `M` from 1 to `d` would turn that into a curve and
+   connect it directly to Part 10's geometric-in-`M` result.
+14. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
    located empirically at `nu ~ 10` (Part 4 Section 8). What remains is the shape-fixed control --
    a Gaussian filter run at the Student-t's reduced scale -- and whether the `nu ~ 10` location can
    be derived rather than measured.
