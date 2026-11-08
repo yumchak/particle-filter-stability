@@ -40,6 +40,7 @@ decaying and starts to explode.
 | `09_nonlinear_observations.ipynb` | **Part 9.** 39 nonlinear observation functions `f` x 4 potentials x 3 filter variants, scored against an exact grid posterior in one and two dimensions. The shape of `f` costs nothing; *assuming* the Gaussian reduction when it fails costs up to `16x`. |
 | `10_detectability_boundary.ipynb` | **Part 10.** Sweeps `M` from 1 to `d` above the stability threshold, as Part 5 asked. Finds no boundary in `M` -- `M = d-1` is as bad as `M = 1` -- and that detectability, an exact test on `(F, H)`, decides it in `84/84` cells. Then the first failure of time-uniform stability in the project. |
 | `11_part2_error_bars.ipynb` | **Part 11.** The six Part 2 claims Part 3 did not re-test, over 30 datasets instead of one. Two fall: the `O(1/sqrt N)` rate does **not** hold at `M < d`, and the `M < d` cloud is not healthier. Both failures trace to the same cause, and the rate deficit sits entirely in the unobserved directions. |
+| `12_screen_2b_4_5.ipynb` | **Part 12.** The same screen on Parts 2b, 4 and 5: ten claims classified and **predicted before being run**, then tested over 30 datasets. Two fall (Part 2b's rate, Part 4's in-model ESS claim), Part 5 comes out clean, and the rule scores `7/10` -- the three misses correcting it. |
 | `filters.py` | Core filter code for Parts 1–3, 5, 6 and 10: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions, the Kolmogorov distance against a Gaussian posterior (Part 8), and Part 10's detectability tools -- the observability matrix and its subspaces, the Hautus test, and the data-free covariance recursion. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 | `observation_models.py` | Parts 7-9: arbitrary observation functions `f` (a 41-entry registry with **measured** rather than asserted structure), four potential shapes including the paper's own, the Section 5.3.2 projection, the affine surrogate, the information-equalising control, and exact grid benchmarks for `d = 1` and `d = 2`. |
@@ -266,6 +267,27 @@ This matches the finding reached independently in Part 5: an explosive but *obse
 leaves the posterior bounded, while an explosive *unobserved* one does not. What bounds the filter
 is detectability, not stability.
 
+> **Correction (added after Part 12).** Everything above came from `DATA_SEED = 42` with 10 filter
+> seeds. Part 3b error-barred the relative gaps and the long-horizon flatness; Part 12 screened the
+> rest over 30 datasets.
+>
+> - **"the fitted `O(1/sqrt(N))` slopes survive" — withdrawn.** `M < d` at `rho = 1` fits
+>   `-0.4693 +- 0.0151`, which is `3.98` standard errors from `-0.5` and `3.77` from `M = d`. The
+>   single-dataset `-0.483` pointed the right way without being able to settle it. This is Part 11's
+>   finding at `rho = 0.9` (`-0.4745 +- 0.0108`) repeated at the threshold — and the two are the
+>   **same** to within a fraction of a standard error, so the rate deficit belongs to the direction
+>   being unconstrained, not to the dynamics.
+> - **The other four claims survive as patterns, not as figures.** All lie inside the datasets'
+>   observed range and outside the 95% CI of the mean: `3.45 -> 3.673 +- 0.223`,
+>   `0.110 -> 0.1616 +- 0.0284`, `0.198 -> 0.2425 +- 0.0218`, min ESS `82 -> 58.1 +- 12.7`.
+> - **At `rho = 1` even the time averages need error bars.** The relative gap at `d = 16`, `M = 1`
+>   varies by a factor of `7.1` across datasets, against `1.4`-`1.5` for the same quantities at
+>   `rho = 0.9`. With a random-walk state each dataset explores a different region. Part 4b noticed
+>   the same thing independently.
+> - And the concentration ratio splits as Part 10 predicts: the posterior is `2.075x` wider in the
+>   unmeasured coordinates (exact, being data-free) against `1.834x` at `rho = 0.9`, while the
+>   filter's own share rises `1.562 -> 1.772 +- 0.107`.
+
 ---
 
 # Part 3: Robustness — long horizons, error bars, and better proposals
@@ -429,6 +451,29 @@ and it is invisible on in-model data.
   multi-dataset check (`7.41` against the Gaussian's `7.35`); only `nu = 5` (worse) and `nu = 1`
   (better) separate reliably there.
 
+> **Correction (added after Part 12).** The in-model sections above used 10-200 **filter** seeds, all
+> on `DATA_SEED = 42` — the design Part 11 showed averages away the wrong noise. Over 12 independent
+> datasets the first key finding fails on both halves:
+>
+> - **"there is no difference" — too strong.** Three of six Student-t filters separate from the
+>   Gaussian: `nu = 5` at `1.030x` (`|t| = 2.41`), `nu = 2` at `1.033x` (`|t| = 3.11`), and `nu = 1`
+>   at **`1.101x`** with `|t| = 10.56`. All seven still sit between `0.0280` and `0.0308`, so the
+>   substantive point holds; the right statement is "differences under 10%, and the Cauchy's is
+>   real".
+> - **"the Student-t filters look healthier (min ESS 33 vs 7.6)" — an artefact of which ESS was
+>   reported.** On the same runs the **minimum** ESS says the Cauchy is healthier (`23.2 +- 4.2`
+>   against `7.6 +- 2.3`, `|t| = 6.39`) and the **mean** ESS says it is worse (`395.7 +- 1.5` against
+>   `504.6 +- 2.2`, `|t| = 80.07`). Two overwhelmingly significant results of **opposite sign**:
+>   heavy tails occasionally throw particles far out, lifting the worst step and lowering the
+>   average. The quoted `33` is also outside the observed range `7.1`-`32.1`.
+>
+> **The `nu ~ 10` claim, by contrast, is confirmed more firmly than one dataset could have shown it.**
+> At `y* = 20` the maximum is interior in **12 of 12** datasets with the argmax in `{7, 10}` in
+> **12 of 12**, and the peak is `3.23 +- 0.44x` the Gaussian against the quoted `3.2`. One amendment:
+> at `y* = 50` the argmax moves to `nu = 15` (7 of 12) and the peak is `2.53 +- 0.10x`, not `3.2` —
+> a larger outlier needs a heavier tail to be maximally awkward, which is the direction the mechanism
+> predicts.
+
 
 ---
 
@@ -537,6 +582,19 @@ Four experiments, at `Q = R = I`, `N = 1000`, over `b = 0.5, 0.9, 0.99, 1.0, 1.0
   growing by sixty-six orders of magnitude: a convincing false positive. The usable horizon obeys
   `b^T <~ 1e10`, so long runs near `b = 1` and short runs further out; `b = 1.1` is safe only to
   `T ~ 241`. Section 8 of the notebook measures this instead of hiding it.
+
+### Limitations
+
+**All three of Part 5's single-dataset claims survive Part 12's screen, and one is strengthened.**
+Every half-run ratio is consistent with 1 over 30 datasets (`0.9920 +- 0.0199`, `1.0028 +- 0.0167`,
+`1.0113 +- 0.0176`, `|t| <= 1.26`), so the `0.960` at `b = 1.0` above — the value that looked like a
+4% improvement and sat oddly against the other two — **was noise**, and the corrected picture has no
+residual pattern in `b` at all. The coupling claim survives in the form it was made: it said the two
+threshold penalties were *close* at `1.163` and `1.106`, and over 30 datasets they differ by `0.5%`
+(`|t| = 0.20`). And **Section 7b, which flagged its own `d = 16` ratio of `1.104` as "within noise of
+the others", was right**: `1.0127 +- 0.0263`, `t = +0.95`. All four of its hard cases sit on 1,
+including the collapsed cloud at `d = 4`, `M = 16` with minimum ESS `1.01 +- 0.01` and resampling at
+2000 of 2000 steps.
 
 ### Limitations
 
@@ -1286,13 +1344,130 @@ for.
    intervals — so the significant results stay significant.
 5. **Part 2b has not been given error bars.** Its numbers rest on the same single-dataset design.
 
+---
+
+---
+
+# Part 12: The same screen on Parts 2b, 4 and 5
+
+Part 11 found *why* two of Part 2's claims failed, not just that they did: Part 2's quantities split
+into two groups an order of magnitude apart in dataset-to-dataset variation, and both failures rested
+on the high-variation group — **extreme-value statistics**, a minimum or maximum over a run.
+
+Three parts were built on the same design and unscreened: **Part 2b** (`DATA_SEED = 42`, 10 filter
+seeds), **Part 4** (10-200 **filter** seeds, all on one dataset), and **Part 5** (8 filter seeds).
+Many filter seeds on one dataset removes the filter's Monte Carlo error and leaves the dataset's
+untouched, which is precisely the wrong noise to average away.
+
+### The screen was a prediction, not a fishing trip
+
+Ten claims were classified — `time-avg`, `extreme`, `shape` — and each outcome **predicted from Part
+11's rule before being run**, mechanically, with no case-by-case judgement. Section 7 scores it. That
+distinction matters: a screen that tests ten claims and reports which failed is only as informative
+as its prior, while one that commits to a rule first is a test of the rule.
+
+### Two claims fall
+
+- **Part 2b's "the `O(1/sqrt(N))` rate survives" — withdrawn.** `M < d` at `rho = 1` fits
+  `-0.4693 +- 0.0151`: `3.98` standard errors from `-0.5`, `3.77` from `M = d`. Part 2b's `-0.483`
+  pointed the right way without settling it.
+- **My own prediction about the threshold was wrong, and the data say so cleanly.** Part 10's
+  unbounded error growth suggested the deficit should be *larger* at `rho = 1`. It is `-0.4693` here
+  against `-0.4745` at `rho = 0.9` — the same to a fraction of a standard error. The deficit belongs
+  to the direction being unconstrained, not to what the dynamics do to it. Part 10's result is about
+  the error at fixed `N` as `T` grows; this is about fixed `T` as `N` grows, and the threshold enters
+  the first and not the second.
+- **Part 4's in-model claim fails on both halves.** "No difference between the filters" is too
+  strong — three of six Student-t filters separate from the Gaussian, the Cauchy by `1.101x` with
+  `|t| = 10.56`. And "the Student-t filters look healthier" is an artefact of which ESS was reported:
+
+  | diagnostic | Gaussian | `t nu = 1` | verdict | `\|t\|` |
+  |---|---|---|---|---|
+  | **minimum** ESS | `7.6 +- 2.3` | `23.2 +- 4.2` | Cauchy healthier | 6.39 |
+  | **mean** ESS | `504.6 +- 2.2` | `395.7 +- 1.5` | Cauchy **worse** | 80.07 |
+
+  Two overwhelmingly significant results of **opposite sign on the same runs**. Heavy tails
+  occasionally throw particles far out, which lifts the worst single step and lowers the average.
+  Part 4 quoted the one that flattered its subject.
+
+### Part 5 comes out clean, and tidier than it was
+
+All three claims survive; see the box in Part 5 above. The `0.960` half-run ratio at `b = 1.0` was
+noise, the coupling penalties differ by `0.5%` rather than `5%`, and Section 7b's self-flagged
+`1.104` was indeed within noise. Part 5 is the one part of this repo whose single-dataset claims were
+all sound, including its sharpest — that a cloud running on one effective particle is inaccurate but
+not diverging.
+
+### Part 2b survives as patterns, not as figures
+
+Four claims, every one inside the datasets' observed range and outside the 95% CI of the mean, three
+low by 6-32%: `3.45 -> 3.673 +- 0.223`, `0.110 -> 0.1616 +- 0.0284`, `0.198 -> 0.2425 +- 0.0218`,
+min ESS `82 -> 58.1 +- 12.7`.
+
+### The rule scored 7 of 10, and the misses are the result
+
+All three misses were one-sided — predicted to fail, actually survived. A rule scoring 10 of 10 would
+only have shown it was consistent with the data it was built on.
+
+| kind | n | predicted to fail | actually failed |
+|---|---|---|---|
+| `time-avg` | 5 | 0 | **0** |
+| `extreme` | 3 | 3 | **1** |
+| `shape` | 2 | 2 | **1** |
+
+The time-average half is exact: 5 for 5 here, **0 failures in 8 pooled** across Parts 3, 3b, 11 and
+12. The failure half over-predicts, for two reasons the misses identify.
+
+- **An extreme-value statistic pinned against a boundary cannot mislead.** The ESS cannot fall below
+  1. At `d = 4`, `M = 16` it measures `1.01 +- 0.01` with resampling at every one of 2000 steps, and
+  at `M = 16` in Part 2b's sweep `1.48 +- 0.19` against a quoted `1.5`. Away from the floor the same
+  statistic ranges over `8.0`-`147.0` on the same 30 datasets, a factor of `18`. What makes minima
+  dangerous is variation in *where* the worst step falls, and a floor removes it.
+- **The rule has no notion of effect size.** Part 4's `nu ~ 10` maximum is `3.23 +- 0.44x` the
+  Gaussian — seven standard errors — and one dataset located it exactly: interior in **12 of 12**
+  datasets, argmax in `{7, 10}` in **12 of 12**. Part 2's rate deficit is `0.025` on a slope of
+  `0.5` and needed 30 paired fits. Both are shape claims from one dataset; only one was at risk.
+
+Corrected by its own misses:
+
+> A single-dataset claim is at risk when it rests on **where** something extreme happened — the worst
+> step, the smallest ESS, the location of a maximum — **and** that quantity is free to move. It is
+> safe when the quantity is a time average, when it is pinned against a boundary, or when the effect
+> is large compared with the spread between datasets.
+
+**Across the repo, 5 of 22 single-dataset claims have now failed a multi-dataset test** — Part 3 one,
+Part 11 two, Part 12 two. A 23% failure rate, concentrated entirely in those categories, and the
+number to keep in mind when reading any un-screened figure in Parts 1, 1b, 4b or 6.
+
+### One qualification the screen produced about itself
+
+At `rho(F) = 1` the relative gap at `d = 16`, `M = 1` varies by a factor of **7.1** across the 30
+datasets, against `1.4`-`1.5` for Part 11's `rho = 0.9` quantities. The tidy split into reliable and
+unreliable statistics is a `rho < 1` phenomenon: with a random-walk state each dataset explores a
+different region, so at the threshold even time averages need error bars. Part 4b had noticed the
+same thing and the rule does not capture it.
+
+### Limitations
+
+1. **Ten claims, chosen by hand.** They are the ones each part quoted as findings and that no earlier
+   screen covered, but the selection was not mechanical.
+2. **12 datasets, not 30, for the Student-t sections**, each needing a grid filter per
+   (`nu`, dataset) pair. The `nu = 10` versus `nu = 7` split at `y* = 20` (9 against 3) is not
+   resolved at that sample size.
+3. **Parts 1, 1b, 4b and 6 remain unscreened.** Part 6 rests on 2 seeds at `T = 1e6` and 4 at `1e5`
+   by its own account; Part 4b's intervals are explicitly three times wider than Part 4's.
+4. **The corrected rule has not been tested on anything.** It was derived from the three misses here,
+   so quoting it as a `7/10` rule would be circular. Its honest status is a hypothesis with a stated
+   mechanism, and Parts 1, 1b, 4b and 6 are where it could be tested.
+
 ## Next steps
 
 Items 1-3 of the original plan (long horizons, many-dataset error bars, better proposals) are **done
 in Part 3**; varying `F` across the stability threshold is **done in Part 5**. Mapping the
 detectability boundary, and asking whether a better proposal helps where the posterior is unbounded,
 are **done in Part 10** -- the first by showing the boundary is not in `M` at all. Error bars on the
-rest of Part 2 are **done in Part 11**, where two more of its claims fell. What genuinely remains:
+rest of Part 2 are **done in Part 11**, where two more of its claims fell, and on Parts 2b, 4 and 5
+in **Part 12**, where two more fell and Part 5 came out clean. What genuinely remains:
 
 1. **Sequential Quasi-Monte Carlo (SQMC).** The `O(1/sqrt(N))` rate confirmed in every regime is the
    fundamental limit of plain Monte Carlo. SQMC replaces random draws with low-discrepancy points
@@ -1315,11 +1490,12 @@ rest of Part 2 are **done in Part 11**, where two more of its claims fell. What 
    sharpen the reading of Section 7.5.2, and costs nothing beyond rerunning Part 8's Section 6 on a
    finer quantile grid. The `d`-dimensional orthant Kolmogorov distance, rather than Part 8's
    marginal version, is the other loose end.
-5. **Error bars on Part 2b, and on Parts 4 and 5 (from Part 11).** Part 11 gave Part 2 the 30-dataset
-   treatment and two more claims fell, both of them resting on extreme-value statistics. Part 2b was
-   built on the same single-dataset design and has not been re-tested; Part 5 Section 7b used only 4
-   seeds and flagged its own `d = 16` ratio as within noise. The screen is cheap and now has a known
-   hit rate of 3 in 9.
+5. **Test Part 12's corrected rule on Parts 1, 1b, 4b and 6.** Part 12 derived the rule from its own
+   three misses, so quoting it is circular until it predicts something it was not built on. Part 6 is
+   the natural target: its conclusions rest on 2 seeds at `T = 1e6` and 4 at `1e5` by its own
+   account, and it is built almost entirely on extreme-value statistics — which the rule now says are
+   dangerous only where they are free to move. A screen there is both a test of the rule and the last
+   unscreened part of the repo.
 6. **A posterior-weighted curvature measure (from Part 9).** The relative residual of the affine fit
    predicts the cost of forcing the Gaussian reduction at a correlation of only `0.596`. Weighting
    the misfit by the posterior rather than by the sampling window would plausibly do better, and
