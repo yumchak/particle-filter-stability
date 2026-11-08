@@ -1099,3 +1099,161 @@ def weighted_ks_vs_gaussian(particles, weights, m, P, dirs):
     prev[1:] = cum[:-1]
     gaps = np.maximum(np.abs(cum - exact), np.abs(prev - exact))   # (N, K)
     return float(gaps[:, live].max())
+
+
+# ---------------------------------------------------------------------------
+# Detectability: which directions the observations ever constrain (Part 10)
+# ---------------------------------------------------------------------------
+#
+# Parts 1-9 all took it for granted that the exact posterior is a sensible
+# object to compare a particle filter against. Part 5 Section 9 found one case
+# where it is not: with d = 2, M = 1 and rho(F) > 1, the posterior variance in
+# the unobserved direction grows without bound, so there is nothing for any
+# filter to approximate. The tools below decide, for a given (F, H), whether
+# that happens -- before any data are simulated.
+#
+# The classical object is the observability matrix
+#
+#     O = [H; H F; H F^2; ...; H F^{d-1}],
+#
+# whose row space is the set of linear functionals of x_0 that the whole
+# observation record determines. Its orthogonal complement, the unobservable
+# subspace, is invisible to the data for all time. A mode is harmless if it
+# decays, so what matters is not observability but DETECTABILITY: every
+# eigenvalue of F with |lambda| >= 1 must be observable. That is the Hautus (or
+# PBH) test implemented in `detectable`.
+
+
+def observability_matrix(F, H):
+    """The matrix O = [H; H F; ...; H F^{d-1}], stacked row-wise.
+
+    Returns an array of shape (d * M, d). Its rank is the dimension of the
+    subspace of the state that the observation record pins down; d - rank is
+    the dimension of the unobservable subspace.
+    """
+    F = np.asarray(F, dtype=float)
+    H = np.atleast_2d(np.asarray(H, dtype=float))
+    d = F.shape[0]
+    rows = [H]
+    for _ in range(d - 1):
+        rows.append(rows[-1] @ F)
+    return np.vstack(rows)
+
+
+def unobservable_subspace(F, H):
+    """Orthonormal bases (unobservable, observable) of the two subspaces.
+
+    Obtained from the SVD of the observability matrix rather than from a
+    null-space routine, so that the rank decision and the basis come from the
+    same factorisation and use the same tolerance.
+
+    Returns
+    -------
+    unobs : ndarray, shape (d - rank, d)   -- rows span the unobservable part
+    obs   : ndarray, shape (rank, d)       -- rows span its complement
+
+    Either may be empty. The rows of both are unit-norm and mutually
+    orthogonal, so they can be passed straight to `weighted_ks_vs_gaussian` as
+    directions: that is what splits the filter's error into the part the data
+    constrain and the part they never touch.
+    """
+    O = observability_matrix(F, H)
+    s, Vt = np.linalg.svd(O)[1:]
+    tol = max(O.shape) * np.finfo(float).eps * (s[0] if s.size else 1.0)
+    rank = int((s > tol).sum())
+    return Vt[rank:], Vt[:rank]
+
+
+def detectable(F, H, tol=None):
+    """Is every eigenvalue of F with |lambda| >= 1 observable? (Hautus test.)
+
+    For each such eigenvalue the test is
+
+        rank [[F - lambda I], [H]] = d,
+
+    which fails exactly when some eigenvector of that eigenvalue lies in the
+    kernel of H and of every H F^k -- an explosive or marginally stable
+    direction the data never see.
+
+    Why this and not plain observability: an unobserved direction whose mode
+    decays contributes a bounded amount to the posterior variance, because the
+    prior pulls it back faster than ignorance accumulates. An unobserved
+    direction with |lambda| >= 1 does not, and the posterior variance diverges.
+    Detectability is the exact dividing line, and Part 10 Section 3 checks it
+    against the measured covariance recursion cell by cell.
+
+    Returns
+    -------
+    ok : bool                 -- True when the model is detectable
+    lam : ndarray             -- all eigenvalues of F
+    bad : list                -- the undetectable eigenvalues, empty when ok
+    """
+    F = np.asarray(F, dtype=float)
+    H = np.atleast_2d(np.asarray(H, dtype=float))
+    d = F.shape[0]
+    lam = np.linalg.eigvals(F)
+    bad = []
+    for l in lam:
+        # ">= 1" up to round-off: b = 1.0 is built exactly, but the rescaling
+        # in build_model can land the eigenvalue a few ulps below it.
+        if abs(l) < 1.0 - 1e-12:
+            continue
+        stack = np.vstack([F - l * np.eye(d), H.astype(complex)])
+        if np.linalg.matrix_rank(stack, tol=tol) < d:
+            bad.append(l)
+    return len(bad) == 0, lam, bad
+
+
+def posterior_cov_recursion(F, Q, H, R, T=400, P0=None):
+    """The Kalman covariance sequence P_0..P_{T-1}, with no data involved.
+
+    For a linear-Gaussian model the posterior covariance obeys a recursion that
+    never looks at y, so the whole question of whether the posterior stays
+    bounded can be settled without simulating anything. That matters above the
+    stability threshold: the states and observations themselves overflow long
+    before the covariance does, and Part 5 Section 8 showed that running the
+    full filter there measures floating-point cancellation rather than the
+    model. This function is the same recursion as in `kalman_filter_md` with
+    the mean update dropped.
+
+    Returns an array of shape (T, d, d).
+    """
+    F = np.asarray(F, dtype=float)
+    d = F.shape[0]
+    I = np.eye(d)
+    P = np.zeros((d, d)) if P0 is None else np.asarray(P0, dtype=float)
+    out = np.zeros((T, d, d))
+    # Above the threshold P grows like rho(F)^{2t} and will overflow to inf at
+    # large T by design; the flags that raises say nothing about correctness,
+    # and the caller reads the finite part of the sequence.
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        for t in range(T):
+            P_pred = F @ P @ F.T + Q
+            S = H @ P_pred @ H.T + R
+            K = np.linalg.solve(S.T, (P_pred @ H.T).T).T
+            P_new = (I - K @ H) @ P_pred
+            P = 0.5 * (P_new + P_new.T)
+            out[t] = P
+    return out
+
+
+def cov_growth_rate(Ps, frac=0.5):
+    """Growth rate of log lambda_max(P_t) over the last `frac` of the sequence.
+
+    Zero (to round-off) when the posterior settles to a fixed point; equal to
+    2 log rho(F) when a direction is undetectable, since the posterior variance
+    there grows exactly as fast as the state's own. Cells whose covariance has
+    already overflowed are dropped before the fit.
+    """
+    Ps = np.asarray(Ps)
+    T = Ps.shape[0]
+    ev = np.array([np.linalg.eigvalsh(P)[-1] if np.all(np.isfinite(P)) else np.nan
+                   for P in Ps])
+    k = int(T * (1.0 - frac))
+    tt = np.arange(k, T)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        lg = np.log(ev[k:])
+    ok = np.isfinite(lg)
+    if ok.sum() < 3:
+        return np.nan, ev
+    return float(np.polyfit(tt[ok], lg[ok], 1)[0]), ev

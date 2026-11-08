@@ -38,7 +38,8 @@ decaying and starts to explode.
 | `07_student_t_likelihood.ipynb` | **Part 7.** Student-t observation likelihood with `M > d`, under a control that holds total precision fixed. Extra coordinates cost nothing under any likelihood; what Part 2 saw was precision; and the `d`-dimensional projection stops being free, at up to `4.7x`. |
 | `08_kolmogorov_distance.ipynb` | **Part 8.** Replaces the mean distance with the Kolmogorov distance -- bounded, scale-free, calibratable -- and shows Part 6's growing maximum is an extreme-value effect, not degradation: the per-step distribution is stationary over `10^6` steps. |
 | `09_nonlinear_observations.ipynb` | **Part 9.** 39 nonlinear observation functions `f` x 4 potentials x 3 filter variants, scored against an exact grid posterior in one and two dimensions. The shape of `f` costs nothing; *assuming* the Gaussian reduction when it fails costs up to `16x`. |
-| `filters.py` | Core filter code for Parts 1–3: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions. NumPy only. |
+| `10_detectability_boundary.ipynb` | **Part 10.** Sweeps `M` from 1 to `d` above the stability threshold, as Part 5 asked. Finds no boundary in `M` -- `M = d-1` is as bad as `M = 1` -- and that detectability, an exact test on `(F, H)`, decides it in `84/84` cells. Then the first failure of time-uniform stability in the project. |
+| `filters.py` | Core filter code for Parts 1–3, 5, 6 and 10: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions, the Kolmogorov distance against a Gaussian posterior (Part 8), and Part 10's detectability tools -- the observability matrix and its subspaces, the Hautus test, and the data-free covariance recursion. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 | `observation_models.py` | Parts 7-9: arbitrary observation functions `f` (a 41-entry registry with **measured** rather than asserted structure), four potential shapes including the paper's own, the Section 5.3.2 projection, the affine surrogate, the information-equalising control, and exact grid benchmarks for `d = 1` and `d = 2`. |
 
@@ -508,9 +509,11 @@ Four experiments, at `Q = R = I`, `N = 1000`, over `b = 0.5, 0.9, 0.99, 1.0, 1.0
 ### Limitations
 
 Only `Q = R = I` was tested, so the insensitivity above depends on the observations being
-informative at every step. Section 9 used a single unobserved direction at `d = 2`. Section 7b used
-only 4 seeds, and its `d = 16` ratio of `1.104` is within noise of the others. And `b` and `T`
-cannot both be pushed, so nothing here says what happens at `b = 1.1` beyond `T ~ 241`.
+informative at every step. Section 9 used a single unobserved direction at `d = 2`; **Part 10 takes
+that case apart** and finds the quantity that matters is not how many directions go unobserved but
+whether the unstable ones are detectable. Section 7b used only 4 seeds, and its `d = 16` ratio of
+`1.104` is within noise of the others. And `b` and `T` cannot both be pushed, so nothing here says
+what happens at `b = 1.1` beyond `T ~ 241`.
 
 ---
 
@@ -573,6 +576,12 @@ Part 1; here it cuts the worst case by less than a factor of two.
 Two seeds at `T = 1e6` and four at `1e5`, so the longest-horizon points are the noisiest and carry
 the most weight in the fitted exponent. One dataset per setting. And minimum ESS is itself an
 extreme-value statistic, so its fall with `T` is partly definitional.
+
+**One further limitation, identified later.** Every run here is *detectable*: the observations
+constrain every unstable direction of the state. Part 10 Section 8 repeats this measurement in a
+direction they never constrain and finds the error growing without bound -- `0.038` to `0.610` over
+`T = 2000` at `b = 1` -- so the flatness established above is a property of the models tested, not
+of particle filters. Within those models it stands.
 
 # Part 7: Student-t likelihood with `M > d`
 
@@ -896,10 +905,220 @@ isolates at `b = 1`, reached by raising precision instead of letting the state w
 `exp_only` and `softsign_only` remain unusable at `b = 1`: their information varies by `1e41` and
 `3e3` along a single trajectory, which fixing the median cannot address.
 
+---
+
+---
+
+# Part 10: The detectability boundary
+
+Part 5 Section 9 found the one place in this project where the exact posterior stops being a
+sensible thing to approximate: at `d = 2`, `M = 1`, `rho(F) = 1.1` the posterior variance in the
+unobserved direction reached `1.25e13` against `0.64` when it was observed, while the ESS stayed
+healthy at 50-65. The next-steps list proposed mapping that boundary by sweeping `M` from 1 to `d`.
+
+> **Map the detectability boundary.** Sweeping `M` from 1 to `d` at fixed `b > 1` would measure how
+> much observation is enough to keep the posterior bounded.
+
+The sweep was run, over `84` cells at `d = 2, 4, 8`, `M = 1..d`, `b = 1.0, 1.01, 1.1` and coupling
+`0` and `0.2`. **The premise was wrong, and that is worth more than the curve would have been.**
+
+### Sections 1-6 cost nothing to run
+
+The covariance recursion `P_t = (I - K_t H)(F P_{t-1} F' + Q)` never looks at `y`, so boundedness is
+settled **without simulating any data** -- which is what makes it safe to ask above the threshold,
+where Part 5 Section 8 showed a filter run measures floating-point cancellation rather than the
+model. `posterior_cov_recursion` agrees with `kalman_filter_md` to **exactly zero**, bit for bit,
+in all ten validation cells.
+
+### The question has no answer in `M`
+
+- **At `coupling = 0` it is a cliff, and the cliff is in the wrong variable.** Every cell with
+  `M < d` diverges and every cell with `M = d` is bounded, with nothing in between. The diverging
+  cells are not merely similar: at `b = 1.1` they all report `lam_max(P_T) = 6.1934e33`,
+  *identically*, at every `d` and every `M` from 1 to `d-1`. **Seven observations of an
+  eight-dimensional state are worth exactly as much as one.**
+- **At `coupling = 0.2` the cliff is gone.** Every cell is bounded, including `M = 1` at `d = 8`,
+  where one scalar per step holds the posterior variance of an explosive 8-dimensional state at
+  `1815` instead of `1e33`.
+- So the same sweep answers "all `d` of them" and "one is enough" depending on a parameter the
+  question never mentioned. **Whatever decides boundedness, it is not the number of observations.**
+
+### What does decide it, and it is exact
+
+Detectability: every eigenvalue of `F` with `|lambda| >= 1` must be observable (the Hautus test,
+`rank [[F - lambda I], [H]] = d`). It agreed with the measured recursion in **84 of 84 cells**, no
+exceptions, computed from `(F, H)` by two rank calculations in microseconds where the recursion needs
+1600 steps. `detectable` in `filters.py` now carries it.
+
+The rate confirms the mechanism, not just the verdict. Every diverging cell grows at **exactly**
+`2 log b` -- to `7.4e-5` at `b = 1.01` and to `0.00e0`, exactly in double precision, at `b = 1.1`.
+The posterior variance in an unobserved direction grows at precisely the rate of the state's own:
+the signature of a direction the data never constrain at all, rather than one they constrain weakly.
+
+**At `b = 1` exactly the divergence is linear, not geometric:** `lam_max(P_t) = 1.0000 t + 0.0000`,
+log-log slope `1.0000`, the constant being `Q = 1`. Each step adds one unit of process variance to a
+direction that receives no information. A geometric rate fitted there reads `3.4e-3` and rounds to
+"bounded" on any sensible tolerance, so the verdict has to be read from two horizons instead -- and
+that choice is what makes the `84/84` possible. **The marginally stable case diverges too, just
+polynomially, and a geometric test cannot see it.**
+
+### The cliff belongs to `F`, not to `H`
+
+At `coupling = 0`, `F = b I`, so `H F^k = b^k H` and every block of the observability matrix is a
+multiple of the first: its rank is `rank H <= M` whatever `H` is. The control confirms it -- a dense
+random `H` mixing every coordinate into every measurement gives `lam_max(P_T) = 6.1934e33` at every
+`M < d`, **the same value to five figures as the sparse canonical selector**, at `d = 2, 4, 8` alike.
+An observation can only see the subspace it points at, because `F` never rotates anything into it.
+
+Two asides. At `M = d` the random `H` is *worse* (`18.8`, `9.47`, `23.5` against `0.639`), being
+poorly conditioned. And at `d = 2`, `M = 1`, `coupling = 0.2` a random single row gives `20123`
+against the canonical `4.24`, a factor of `4700`: a dense observation is not automatically a more
+informative one. Detectability is binary; the bound it leaves behind is not.
+
+### The boundary is sharp in theory and blurred in arithmetic
+
+Coupling is the real knob, and **boundedness is discontinuous in it while the bound is continuous**:
+at `d = 4`, `M = 1`, `b = 1.1` the posterior stays bounded for every `c != 0` while `lam_max` runs
+`20.7 -> 37.0 -> 139 -> 1260 -> 6.0e5 -> 2.4e14` as `c` falls from `0.3` to `0.001`, then jumps to
+`6.2e33`. The rank test is right about the limit and useless near it: it says "detectable, fine" at
+`c = 0.001`, where the posterior variance is `2.4e14`.
+
+`sigma_min(O)` was the natural continuous stand-in and it **only half works** -- a clean power law
+within a fixed `d` (exponent `-2.08`, `-1.93`, `-1.89` at `d = 2, 4, 8`, close to the `-2` dimensional
+analysis suggests) and a collapse across `d` (pooled exponent `-1.24`, residual **a factor of 706**).
+The intercepts are what differ, because `sigma_min` of a `dM x d` matrix built from `d` powers of `F`
+shrinks with `d` for reasons unrelated to how much information reaches the unstable mode. Reported as
+a negative: there is a continuous detectability margin to be found, and this is not it.
+
+**More seriously, the sharp boundary dissolves in double precision before it dissolves in theory.**
+At `d = 8`, `sigma_min(O)` reaches `2.2e-16` at `coupling = 0.01` and the *numerical* rank drops to
+7, then 6, then 5, while the mathematical rank is 8 throughout. The recursion follows, its rate
+climbing `0.031, 0.066, 0.141, 0.180` towards `2 log b = 0.191`. **These models are detectable and
+unfilterable.** A theorem resting on a rank gives no warning that the information it relies on is
+carried at `1e-23`, and the dimension at which that happens is modest.
+
+### What one more observation buys, when the posterior is bounded
+
+Geometric decay: each extra observed coordinate divides the posterior spread by a roughly constant
+factor, between `2.7` and `4.7` at `coupling = 0.2`. The factor is set by the coupling and is nearly
+**independent of `d`** -- log-linear slope `-1.49` at both `d = 8` and `d = 12` for `c = 0.1`,
+`-1.11` and `-1.10` for `c = 0.2`, `-0.97` and `-0.95` for `c = 0.3`. Stronger coupling buys a
+*smaller* factor per observation, for the obvious reason that the first measurement has already done
+more of the work. This is the curve the item was reaching for; it is not a boundary, because nothing
+happens at any particular `M`.
+
+### What this costs the particle filter: not what one would guess
+
+Scored with Part 8's Kolmogorov distance, computed twice per step along the observable and
+unobservable subspaces of `(F, H)` -- a split without which the effect averages away against the
+healthy coordinates.
+
+- **The posterior's spread is almost irrelevant.** Across detectable cells `lam_max(P)` spans
+  `6.6x`, `57.8x` and `2839x` at `d = 2, 4, 8` while the distance spans `1.17x`, `1.22x` and
+  `1.78x`. A posterior nearly three thousand times wider is approximated nearly as well.
+- **With the posterior held *identical*, the error still varies two-fold.** The `coupling = 0`,
+  `M < d` cells share one posterior to six figures, and across them the unobservable-subspace
+  distance runs `0.299 -> 0.638` at `d = 4` and `0.422 -> 0.743` at `d = 8` as the ESS falls from
+  `486` to `25`. That is Part 2's degeneracy, not detectability.
+- **At matched `M` and matched ESS, undetectability costs up to `5x`** -- `0.299` against `0.112` at
+  `d = 4, M = 1` with ESS `486` against `476`, so not a weight effect.
+- **But at `d = 8` the sign reverses.** A **bounded** posterior with `lam_max = 1815` is harder
+  (`0.551`) than an unbounded one (`0.422`), because where a direction is never observed the
+  posterior along it *is* the prior propagation -- exactly what the bootstrap proposal samples from,
+  so the proposal is locally optimal there for free. Where it is observed weakly and from far away,
+  the data do constrain it, the proposal ignores them, and the particles land in the wrong place.
+  This is Part 9 Section 9's failure mode in a linear model.
+
+### The one result that changes a conclusion of this project
+
+Part 3 Section 4, Part 3b, Part 5 Section 7 and all of Part 6 measured the error against `T` and
+found it flat -- Part 6 to `T = 10^6`, with a bounded metric, so not an artefact of the statistic.
+**Every one of those runs was detectable.** In the unobservable subspace the error grows without
+bound:
+
+| `b` | `t = 0` | `t = 199` | `t = 1999` | half-run ratio |
+|---|---|---|---|---|
+| 0.9 | 0.0379 | 0.0669 | 0.0814 | 1.003 |
+| 0.99 | 0.0379 | 0.1685 | 0.1995 | 1.096 |
+| 1.0 | 0.0379 | 0.3389 | 0.6099 | **1.405** |
+| 1.01 | 0.0379 | 0.4816 | 0.8290 | **1.331** |
+
+while the **observable** subspace of the very same runs stays at `0.040-0.045` at every `t` and every
+`b`. The stable cases are their own control: `b = 0.9` is flat to `0.3%` over `T = 2000`.
+
+`b = 1.0` is the cell that settles it. There `b^T = 1` exactly and the state is a random walk of
+size `sqrt(T) ~ 45`, so **no floating-point reading is available** -- none of Part 5 Section 8's
+cancellation applies -- and the distance still goes from `0.038` to `0.610`.
+
+**The mechanism is measured, not inferred.** The cloud becomes progressively **under-dispersed**
+along the unobserved direction: its spread, as a fraction of the exact posterior's, falls
+`1.00 -> 0.81 -> 0.57 -> 0.50` at `b = 1.0` and to `0.16` at `b = 1.01`, while staying at
+`0.99-1.01` at `b = 0.9`. The error in the posterior mean follows, to `0.62` posterior sd. The cause
+is resampling: weights come from the observed coordinates alone, so every resampling event prunes
+diversity in a direction that carries no information to justify the pruning, and above the threshold
+the prior's pull cannot restore what is removed.
+
+**And the standard diagnostic reports nothing.** The ESS sits at `500-650` of `1000` in all four
+runs, no trend, no difference between `b = 0.9` and `b = 1.01`. A practitioner watching ESS would see
+a healthy filter at every step of a run whose error had grown twenty-fold. This sharpens Part 5's
+observation that the ESS stayed healthy while the posterior diverged: the ESS is blind here not
+because the filter is fine but because it only ever measures the directions the likelihood touches.
+
+### Two closing controls
+
+- **More particles still help, at nearly the usual rate.** At fixed `t = 149` the distance falls
+  `0.327 -> 0.057` over `N = 250` to `16000`, slope `-0.425` in `log N` against `-0.5`. So this is a
+  constant in front of `N^-1/2` that grows with `t`, not a bias: consistent at any fixed horizon,
+  uniformly accurate over none.
+- **`b = 1.1` run to `T = 2000` shows exactly what Part 5's horizon limit protects against.** The two
+  distances **freeze** -- `0.7288` and `0.5000`, identically, from `t = 499` to `t = 1999`, the
+  dispersion ratio stuck at `0.6362`. Adding `O(1)` noise to a state of order `1e20` changes nothing,
+  so every trajectory has become a deterministic multiple of its own past. An error constant to four
+  decimals over fifteen hundred steps is not a result; the round `0.5000` is the signature of the
+  arithmetic. Reported rather than deleted, because it would be easy to present as saturation.
+
+### It also answers the proposal question (old next-steps item 10)
+
+A **qualified no**, closer to the conjecture than to a clean negative. Over the 11 undetectable cells
+the locally optimal proposal improves the unobservable subspace by `1.52x` (range `1.15-2.21`),
+against `2.00x` for the observable subspace of the same cells and `2.51x` (up to `4.24x`) for the
+detectable ones -- least help exactly where the posterior is unbounded, as predicted. The reason is
+structural: there `p(x_t | x_{t-1}, y_t) = p(x_t | x_{t-1})`, so the two proposals **coincide**, and
+what the optimal one buys is indirect, through resampling less often.
+
+Indirect is not nothing. At `b = 1.0`, `T = 2000` it roughly halves the error (`0.610 -> 0.473`) and
+holds the dispersion ratio at `0.789` instead of `0.505`. But both are still growing at `T = 2000`.
+The proposal delays the failure by a constant factor and cannot remove it, because the object being
+approximated is itself unbounded. Part 5's reading was right that this is not a proposal problem --
+and Section 8 adds that it is not purely a posterior problem either, since the filter's error grows
+faster than the posterior's own uncertainty.
+
+### Limitations
+
+1. **One family of `F`.** Everything rests on `build_model`'s symmetric tridiagonal base, where
+   `coupling != 0` happens to make the first coordinate a cyclic vector and so makes `M = 1`
+   sufficient. That is generic, not universal: an `F` whose unstable eigenvector is orthogonal to
+   every power of `H` would be undetectable at any `M < d` with coupling present. The Hautus test
+   handles that correctly, but no such case was **run**, so the `84/84` is agreement over one
+   structured family.
+2. **`Q = R = I` throughout**, as in Part 5. The geometric-in-`M` decay may well be a statement about
+   isotropic noise.
+3. **The near-undetectable regime is diagnosed, not measured.** A high-precision reference run would
+   separate "the filter cannot use this information" from "this arithmetic cannot represent it".
+4. **Section 8 uses one cell** (`d = 4`, `M = 1`, `coupling = 0`, 8 seeds). Whether the growth
+   saturates at the Kolmogorov ceiling of 1, and at what `T`, is not established -- and `b = 1.1`
+   cannot be used to find out.
+5. **No continuous detectability margin was found.** A closed form for the information reaching the
+   unstable eigenvector was tried during this work and discarded: it under-predicted `lam_max` by
+   factors of 3 to 80, because summing the information available at each past time over-counts what
+   is actually recoverable. That remains open.
+
 ## Next steps
 
 Items 1-3 of the original plan (long horizons, many-dataset error bars, better proposals) are **done
-in Part 3**; varying `F` across the stability threshold is **done in Part 5**. What genuinely
+in Part 3**; varying `F` across the stability threshold is **done in Part 5**. Mapping the
+detectability boundary, and asking whether a better proposal helps where the posterior is unbounded,
+are **done in Part 10** -- the first by showing the boundary is not in `M` at all. What genuinely
 remains:
 
 1. **Sequential Quasi-Monte Carlo (SQMC).** The `O(1/sqrt(N))` rate confirmed in every regime is the
@@ -935,16 +1154,27 @@ remains:
    cannot be run at `rho(F) = 1`: their Fisher information varies by `1e41` and `1e3` along one
    trajectory, so equalising its median is not enough. Either control would close the two cells
    Part 9 had to drop.
-8. **Map the detectability boundary (from Part 5).** Part 5 Section 9 shows the posterior becomes
-   unbounded when an explosive direction is never observed, in a single case. Sweeping `M` from 1 to
-   `d` at fixed `b > 1` would measure how much observation is enough to keep it bounded.
-9. **A de-trended formulation for explosive long runs (from Part 5).** Filtering `z_t = F^-t x_t`, or
-   working in log scale, would make `b = 1.1` at `T = 2000` measurable instead of losing it to
-   floating-point cancellation.
-10. **Does the optimal proposal help where the posterior is unbounded?** Part 3's rescue fixes the
-   large-`M` collapse. Part 5 Section 9 suggests it would *not* help with unbounded posterior
-   uncertainty, since that is not a proposal problem - a clean negative result if confirmed.
-11. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
+8. **A de-trended formulation for explosive long runs (from Part 5).** Filtering `z_t = F^-t x_t`,
+   or working in log scale, would make `b = 1.1` at `T = 2000` measurable instead of losing it to
+   floating-point cancellation. Part 10 Section 8b raises the stakes: run naively, that cell returns
+   an error frozen at `0.7288` for fifteen hundred steps, which looks like saturation of a real
+   effect and is not.
+9. **A continuous detectability margin (from Part 10).** `sigma_min(O)` is a clean power law within a
+   fixed `d` and fails across `d` by a factor of `706`. A closed form for the information reaching
+   the unstable eigenvector was tried and discarded -- it under-predicts by `3-80x`, because summing
+   the information available at each past time over-counts what is recoverable. Getting this right
+   would turn Part 10's binary test into a quantity, and would predict `lam_max(P_inf)` rather than
+   merely ordering it.
+10. **An `F` that is undetectable *with* coupling (from Part 10).** Part 10's `84/84` agreement is
+   over one structured family, where `coupling != 0` always makes `M = 1` sufficient. An `F` whose
+   unstable eigenvector is orthogonal to every power of `H` would test the Hautus test where it is
+   not nearly tautological, and is cheap to construct by hand.
+11. **High precision in the near-undetectable regime (from Part 10).** At `d = 8`, `coupling <= 0.01`
+   the numerical rank of `O` drops below `d` while the mathematical rank is full, and the posterior
+   diverges at a rate climbing towards `2 log b`. A reference run in extended precision would
+   separate "the filter cannot use information carried at `1e-23`" from "double precision cannot
+   represent it" -- the first is a real limit on filtering, the second an artefact.
+12. **Close the Part 4 controls.** The random-walk variant is done (Part 4b) and the worst case is
    located empirically at `nu ~ 10` (Part 4 Section 8). What remains is the shape-fixed control --
    a Gaussian filter run at the Student-t's reduced scale -- and whether the `nu ~ 10` location can
    be derived rather than measured.
