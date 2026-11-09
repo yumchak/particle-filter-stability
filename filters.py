@@ -971,7 +971,7 @@ def run_case(d, M, N=1000, T=100, data_seed=42, pf_seed=0,
 
 # ---------------------------------------------------------------------------
 # Kolmogorov distance between the particle cloud and the exact posterior
-# (added for Part 8)
+# (added for Part 9)
 #
 # Parts 1-6 all measure the same thing: the distance between the particle
 # filter's posterior MEAN and the Kalman filter's. That quantity is unbounded,
@@ -985,7 +985,7 @@ def run_case(d, M, N=1000, T=100, data_seed=42, pf_seed=0,
 # ---------------------------------------------------------------------------
 
 # Zelen & Severo (Abramowitz & Stegun 26.2.17). Maximum absolute error
-# 7.5e-8, verified against math.erf in Part 8 Section 1. numpy has no erf and
+# 7.5e-8, verified against math.erf in Part 9 Section 1. numpy has no erf and
 # scipy is not a dependency of this repo, so the approximation is used
 # deliberately: the distances measured below are of order 1e-3 to 1e-1, so an
 # error of 7.5e-8 is four to five orders of magnitude below the signal.
@@ -1014,7 +1014,7 @@ def unit_directions(d, n_random=0, seed=0):
 
     The coordinate axes give the marginal Kolmogorov distance, one coordinate at
     a time. The random directions are there to check that the answer is not an
-    artefact of looking only along the axes -- see Part 8 Section 3.
+    artefact of looking only along the axes -- see Part 9 Section 3.
 
     Returns an array of shape (d + n_random, d) with unit-norm rows.
     """
@@ -1052,7 +1052,7 @@ def weighted_ks_vs_gaussian(particles, weights, m, P, dirs):
     lower bound on the d-dimensional orthant version; taken over many
     directions it approaches the supremum over half-spaces. All of them are
     differences of probabilities, so all are bounded by 1 -- which is the
-    property that matters for Part 8, and the property the mean distance of
+    property that matters for Part 9, and the property the mean distance of
     Parts 1-6 does not have.
 
     Parameters

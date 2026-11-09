@@ -2,7 +2,7 @@
 observation_models.py
 =====================
 
-Parts 7 and 9: observation models beyond the linear-Gaussian case.
+Parts 7 and 8: observation models beyond the linear-Gaussian case.
 
 Everything in Parts 1-6 uses y_t = H x_t + e_t with Gaussian e_t. That model is
 a special case of the Feynman-Kac representation in Del Moral & Gerber (2026),
@@ -75,7 +75,7 @@ Worse, for a non-injective f such as |x| the exact posterior is BIMODAL and
 symmetric, so its mean sits near zero and "distance between posterior means"
 measures nothing at all. `ks_vs_grid` therefore compares the whole particle
 distribution against the whole exact distribution, using the bounded
-Kolmogorov distance introduced in Part 8. That metric is meaningful whatever
+Kolmogorov distance introduced in Part 9. That metric is meaningful whatever
 shape the posterior has.
 
 Reference
@@ -251,7 +251,7 @@ def potential(kind, nu=None):
 # 2. Observation functions f
 # ---------------------------------------------------------------------------
 #
-# Every entry records what it is EXPECTED to violate, so that Part 9 can print
+# Every entry records what it is EXPECTED to violate, so that Part 8 can print
 # the prediction next to the measurement instead of rationalising afterwards.
 # The two structural flags are the ones that matter:
 #
@@ -508,7 +508,7 @@ def by_group(group_prefix=None, d=None):
 # ---------------------------------------------------------------------------
 #
 # The registry records what each f is SUPPOSED to be. These functions measure
-# it instead, from the function alone, so Part 9 can put the claim and the
+# it instead, from the function alone, so Part 8 can put the claim and the
 # measurement side by side. Both of the paper's conditions are checkable:
 # the dimension of the image is a rank question, and bi-Lipschitz is a pair of
 # bounds on ||f(x) - f(x')|| / ||x - x'||.
@@ -570,7 +570,7 @@ def injectivity_gap(fn, span=6.0, n=3000, seed=0):
     Near zero means two states far apart produce the same observation, so the
     likelihood cannot tell them apart and the posterior is multimodal. This is
     what makes the posterior MEAN useless for |x|, x^2 and cos x, and why
-    Part 9 scores those cases with a distributional metric instead.
+    Part 8 scores those cases with a distributional metric instead.
     """
     rng = np.random.default_rng(seed)
     xs = rng.uniform(-span, span, size=(n, fn.d))
@@ -675,7 +675,7 @@ def affine_surrogate(fn, span=6.0, n=20_000, seed=0):
     A, c = coef[:fn.d], coef[fn.d]
     resid = vals - _dot(design, coef)
     # Relative residual: 0 means f was already affine, 1 means the fit explains
-    # none of the variation. This is the curvature number used in Part 9.
+    # none of the variation. This is the curvature number used in Part 8.
     denom = np.linalg.norm(vals - vals.mean(axis=0))
     rel = float(np.linalg.norm(resid) / max(denom, 1e-300))
 
@@ -927,7 +927,7 @@ def grid_filter_obs(y, fn, pot, Sigma, b=1.0, Q=1.0, x0=0.0, half_width=None,
 def ks_vs_grid(particles, weights, grid, post):
     """Kolmogorov distance between a weighted cloud and a gridded density.
 
-    The same bounded metric as Part 8, but with the exact posterior supplied as
+    The same bounded metric as Part 9, but with the exact posterior supplied as
     a density on a grid rather than as a Gaussian. It is still a difference of
     two probabilities, so it still lies in [0, 1], and -- unlike any comparison
     of posterior means -- it stays meaningful when the exact posterior is
@@ -978,7 +978,7 @@ def grid_filter_obs_2d(y, fn, pot, Sigma, b=1.0, Q=1.0, x0=0.0,
     with the convolution factorised across the two axes. The potential is
     evaluated on all G^2 nodes at each step, which is the dominant cost, so `h`
     is coarser here by default than in one dimension. Validated against
-    `kalman_filter_md` on the linear-Gaussian case in Part 9.
+    `kalman_filter_md` on the linear-Gaussian case in Part 8.
 
     Returns (mean (T,2), cov (T,2,2), loglik (T,), gx, gy) and, with
     `return_post=True`, the full posterior (T, G, G) as well -- which for the
@@ -1078,7 +1078,7 @@ def grid_filter_obs_2d(y, fn, pot, Sigma, b=1.0, Q=1.0, x0=0.0,
 def ks_vs_grid_2d(particles, weights, g, post, dirs):
     """Kolmogorov distance along directions, cloud vs a gridded 2-d posterior.
 
-    The Kolmogorov distance has no canonical multivariate form, so Part 8's
+    The Kolmogorov distance has no canonical multivariate form, so Part 9's
     convention carries over unchanged: project both the weighted cloud and the
     exact posterior onto a unit direction, compare the two one-dimensional
     CDFs, and report the worst direction. Each projection is still a
@@ -1211,7 +1211,7 @@ def information_scale(fn, target=None, b=0.9, Q=1.0, T=4000, seed=0, eps=1e-5):
 #                linearised model. One mode by construction.
 #   "mixture"    The same linearisation performed at every local maximum of
 #                the likelihood, giving a Gaussian MIXTURE proposal. This is
-#                the one aimed at Part 9's finding that the only failure mode
+#                the one aimed at Part 8's finding that the only failure mode
 #                it found twice over is a sharp likelihood with two
 #                well-separated modes.
 #

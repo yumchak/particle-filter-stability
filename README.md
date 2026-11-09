@@ -32,21 +32,25 @@ decaying and starts to explode.
 | `05_f_stability_threshold.ipynb` | **Part 5.** Varies the spectral radius of `F` across the stability threshold, in 1D and in `d` dimensions, with and without coupling: accuracy, cloud health, long-run behaviour, and what happens when an explosive direction is never observed. |
 | `06_long_horizons.ipynb` | **Part 6.** How the error grows with `T`, up to `10^6`. Tracks the **maximum** error across decades rather than comparing halves of one run. Finds the maximum grows `7-9x` while the mean grows `1.1x` -- the statistic, not the horizon, was what limited Parts 1-3b. |
 | `07_student_t_likelihood.ipynb` | **Part 7.** Student-t observation likelihood with `M > d`, under a control that holds total precision fixed. Extra coordinates cost nothing under any likelihood; what Part 2 saw was precision; and the `d`-dimensional projection stops being free, at up to `4.7x`. |
-| `08_kolmogorov_distance.ipynb` | **Part 8.** Replaces the mean distance with the Kolmogorov distance -- bounded, scale-free, calibratable -- and shows Part 6's growing maximum is an extreme-value effect, not degradation: the per-step distribution is stationary over `10^6` steps. |
-| `09_nonlinear_observations.ipynb` | **Part 9.** 39 nonlinear observation functions `f` x 4 potentials x 3 filter variants, scored against an exact grid posterior in one and two dimensions. The shape of `f` costs nothing; *assuming* the Gaussian reduction when it fails costs up to `16x`. |
-| `10_detectability_boundary.ipynb` | **Part 10.** Sweeps `M` from 1 to `d` above the stability threshold, as Part 5 asked. Finds no boundary in `M` -- `M = d-1` is as bad as `M = 1` -- and that detectability, an exact test on `(F, H)`, decides it in `84/84` cells. Then the first failure of time-uniform stability in the project. |
-| `11_part2_error_bars.ipynb` | **Part 11.** The six Part 2 claims Part 3 did not re-test, over 30 datasets instead of one. Two fall: the `O(1/sqrt N)` rate does **not** hold at `M < d`, and the `M < d` cloud is not healthier. Both failures trace to the same cause, and the rate deficit sits entirely in the unobserved directions. |
-| `12_screen_2b_4_5.ipynb` | **Part 12.** The same screen on Parts 2b, 4 and 5: ten claims classified and **predicted before being run**, then tested over 30 datasets. Two fall (Part 2b's rate, Part 4's in-model ESS claim), Part 5 comes out clean, and the rule scores `7/10` -- the three misses correcting it. |
-| `13_proposals_nonlinear.ipynb` | **Part 13.** How much of Part 3's optimal-proposal rescue survives once the model is not linear-Gaussian and the proposal must be approximated. Four proposals, including an exact one computed numerically as a ceiling. The rescue is real; the approximations give up the `N^-1/2` rate because their tails are lighter than the target's, and `t_5` components restore it for free. |
-| `filters.py` | Core filter code for Parts 1–3, 5, 6 and 10: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions, the Kolmogorov distance against a Gaussian posterior (Part 8), and Part 10's detectability tools -- the observability matrix and its subspaces, the Hautus test, and the data-free covariance recursion. NumPy only. |
+| `08_nonlinear_observations.ipynb` | **Part 8.** 39 nonlinear observation functions `f` x 4 potentials x 3 filter variants, scored against an exact grid posterior in one and two dimensions. The shape of `f` costs nothing; *assuming* the Gaussian reduction when it fails costs up to `16x`. |
+| `extensions/09_kolmogorov_distance.ipynb` | **Part 9.** Replaces the mean distance with the Kolmogorov distance -- bounded, scale-free, calibratable -- and shows Part 6's growing maximum is an extreme-value effect, not degradation: the per-step distribution is stationary over `10^6` steps. |
+| `extensions/10_detectability_boundary.ipynb` | **Part 10.** Sweeps `M` from 1 to `d` above the stability threshold, as Part 5 asked. Finds no boundary in `M` -- `M = d-1` is as bad as `M = 1` -- and that detectability, an exact test on `(F, H)`, decides it in `84/84` cells. Then the first failure of time-uniform stability in the project. |
+| `extensions/11_part2_error_bars.ipynb` | **Part 11.** The six Part 2 claims Part 3 did not re-test, over 30 datasets instead of one. Two fall: the `O(1/sqrt N)` rate does **not** hold at `M < d`, and the `M < d` cloud is not healthier. Both failures trace to the same cause, and the rate deficit sits entirely in the unobserved directions. |
+| `extensions/12_screen_2b_4_5.ipynb` | **Part 12.** The same screen on Parts 2b, 4 and 5: ten claims classified and **predicted before being run**, then tested over 30 datasets. Two fall (Part 2b's rate, Part 4's in-model ESS claim), Part 5 comes out clean, and the rule scores `7/10` -- the three misses correcting it. |
+| `extensions/13_proposals_nonlinear.ipynb` | **Part 13.** How much of Part 3's optimal-proposal rescue survives once the model is not linear-Gaussian and the proposal must be approximated. Four proposals, including an exact one computed numerically as a ceiling. The rescue is real; the approximations give up the `N^-1/2` rate because their tails are lighter than the target's, and `t_5` components restore it for free. |
+| `filters.py` | Core filter code for Parts 1–3, 5, 6 and 10: Kalman filter and bootstrap particle filter in 1D and in `d` dimensions, the Kolmogorov distance against a Gaussian posterior (Part 9), and Part 10's detectability tools -- the observability matrix and its subspaces, the Hautus test, and the data-free covariance recursion. NumPy only. |
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
-| `observation_models.py` | Parts 7-9: arbitrary observation functions `f` (a 41-entry registry with **measured** rather than asserted structure), four potential shapes including the paper's own, the Section 5.3.2 projection, the affine surrogate, the information-equalising control, and exact grid benchmarks for `d = 1` and `d = 2`. Part 13 adds four proposals for a general scalar `f` -- bootstrap, an exact locally optimal one by numerical CDF inversion, and Gaussian or Student-t mixtures from linearising at the prior mean or at every likelihood mode. |
+| `observation_models.py` | Parts 7 and 8: arbitrary observation functions `f` (a 41-entry registry with **measured** rather than asserted structure), four potential shapes including the paper's own, the Section 5.3.2 projection, the affine surrogate, the information-equalising control, and exact grid benchmarks for `d = 1` and `d = 2`. Part 13 adds four proposals for a general scalar `f` -- bootstrap, an exact locally optimal one by numerical CDF inversion, and Gaussian or Student-t mixtures from linearising at the prior mean or at every likelihood mode. |
 
 The notebooks are numbered in reading order. Parts 1-4 each exist in two versions: the plain number
 is the original run below the stability threshold (`rho(F) = 0.9`) and the `b` suffix is the same
 study at the threshold (`rho(F) = 1`), which is the current version and the one listed above. The two
-are companions rather than replacements -- the sub-threshold runs are the baseline that Parts 6, 8,
+are companions rather than replacements -- the sub-threshold runs are the baseline that Parts 6, 9,
 11 and 12 compare against, so both are kept. From Part 5 onwards there is one notebook per part.
+
+Parts 9-13 live in `extensions/`. They are the parts that go beyond the questions Parts 1-8 were
+set, and each one bootstraps its own path to the repo root, so they run from inside that folder
+exactly as the others run from the root.
 
 All notebooks are committed **with their outputs**, so every plot and number renders on GitHub
 without running anything. Part 5 needs no additions to
@@ -687,7 +691,7 @@ its `d`-dimensional projection.
 
 Uses `observation_models.py`. Since the model is no longer linear-Gaussian, the Kalman filter is not
 its exact filter; the benchmark is a **grid filter**, checked against Kalman to `1e-13` on the
-Gaussian cases. The metric is the Kolmogorov distance of Part 8 -- bounded, scale-free, and
+Gaussian cases. The metric is the Kolmogorov distance of Part 9 -- bounded, scale-free, and
 calibrated so that a score `D` means about `(1.017/D)^2` independent draws.
 
 ### Making "more observations" a fair test
@@ -770,103 +774,14 @@ it carries information about **how much to believe** the part that does.
 
 `d = 1` throughout, because the exact benchmark is a one-dimensional grid filter. `f(x) = [x,...,x]`
 only, a deliberately linear image, so that the potential shape is the only thing that can break the
-reduction -- curved images break it independently, which is Part 9. The joint Student-t shares one
+reduction -- curved images break it independently, which is Part 8. The joint Student-t shares one
 scale across coordinates, which is what makes `||w||^2` informative; the independent-per-coordinate
 version, where the mechanism should be weaker, is available in the module but not swept here. And
 `rho(F) = 1` (random walk) throughout, matching the model from the meeting.
 
-# Part 8: The Kolmogorov distance — measuring what the theorem bounds
+# Part 8: Nonlinear observation functions
 
-Part 6 closed by saying the theorem and the experiment used different metrics. This notebook
-measures the one the theorem uses, on the same grid, so the comparison is like for like.
-
-The distance is `sup_z |F_cloud(z) - F_exact(z)|` along a direction, maximised over directions: a
-difference of two probabilities, so it can never exceed 1. `filters.py` gains `normal_cdf`,
-`unit_directions` and `weighted_ks_vs_gaussian`, plus a `stat_fn` hook on `particle_filter_md` that
-computes a per-step diagnostic and discards the cloud. That hook is what makes `T = 1e6` possible:
-storing the cloud would need about 16 GB, the statistic is 8 MB. With `stat_fn=None` the filter is
-bit-identical to the one used in Parts 1-6.
-
-### The metric was checked before it was used
-
-- `normal_cdf` against `math.erf`: max error `7.45e-8` (no scipy in this repo).
-- An exact sample of size `N` from the target: fitted slope `-0.5004`, with `D sqrt(N)` between
-  `0.985` and `1.035`. This also **calibrates** the metric -- `D ~ 1.017 / sqrt(N)` for an exact
-  sample.
-- A deliberately shifted target: measured matches the analytic supremum to within Monte Carlo noise
-  at all four shifts.
-- A single particle carrying all the weight scores exactly `0.5` at the posterior mean. **Any step
-  whose ESS collapses to ~1 scores at least 0.5**, which drives everything below.
-
-### The per-step error distribution is stationary
-
-Across ten blocks of a `1e6`-step run at `rho = 1` with `M < d`, last block over first:
-
-| mean | median | q90 | q99 | q99.9 | rate > 0.25 |
-|---|---|---|---|---|---|
-| 1.002 | 1.000 | 1.003 | 1.002 | 0.995 | 1.001 |
-
-Only the two rarest statistics move at all. The maximum at any horizon is then **predicted from the
-`(1 - 1/T)` quantile of that distribution, with nothing fitted**, to within 15% over four decades
-(`obs/pred` = 0.947, 1.149, 1.052, 0.951, 1.035). **The growth of the worst case is an
-extreme-value effect, not degradation** -- longer runs do not make the filter worse, they give more
-chances to observe the same rare bad step. This is the direct answer to Dr Gerber's question about
-`M < d` at long horizons.
-
-### Which statistic you report decides whether the theory appears to hold
-
-Growth over `T: 1e2 -> 1e6`, against `sqrt(log T)` = 1.732 on this range:
-
-| statistic | growth | fitted `(log T)^a` |
-|---|---|---|
-| mean | 1.00 - 1.07 | `a = -0.001 - 0.054` (no trend) |
-| **q99.9** | **1.46 - 2.31** | **`a = 0.346 - 0.714`** |
-| maximum | 2.95 - 4.00 | `a = 1.008 - 1.261` |
-| mean gap (Parts 1-6) | 1.03 - 1.11 | — |
-| max gap (Parts 1-6) | 5.71 - 8.69 | Part 6 reported 7.1 - 9.4 |
-
-The `q99.9` row brackets both `sqrt(log T)` and the `a = 0.5` of Section 7.5.1. Part 6's `a = 1.74 -
-2.03` on the maximum falls to `1.008 - 1.261` here, because at `T = 1e6` the bounded metric has
-reached `0.92 - 1.00` and has nowhere left to go.
-
-### The `sqrt(N)` collapse is recovered
-
-The mean distance decays as `N^-0.479` to `N^-0.482` against a theoretical `-0.5`, where Part 6
-measured `-0.22` to `-0.36` on the unbounded metric. Rescaled, `D sqrt(N)` is also **flat in `T`**
-(2.46, 2.49, 2.49 over two decades, where `sqrt(log T)` would give 1.29x), so for the mean the
-`N >= C log T` requirement is conservative. The maximum still does not collapse (`N^-0.114` to
-`N^-0.434`), exactly as the extreme-value reading predicts.
-
-### A thousand particles are worth 128-236 independent draws
-
-Using the Section 1 calibration, at `N = 1000` and `T = 1e6`:
-
-| regime | effective `N` | % of nominal |
-|---|---|---|
-| `M = d`, `rho = 0.9` | 236 | 23.6% |
-| `M > d`, `rho = 0.9` | 174 | 17.4% |
-| `M < d`, `rho = 0.9` | 156 | 15.6% |
-| `M < d`, `rho = 1.0` | 128 | 12.8% |
-
-No quantity in Parts 1-6 can be calibrated this way, because none of them is a probability. The
-metric also tracks cloud health far better: against `log(ESS)` it correlates at `-0.654` where the
-mean distance manages `-0.300`.
-
-### Limitations
-
-The distance is taken over the `d` coordinate axes. Adding 64 random directions raises it by a
-near-constant `1.21x` across all six configurations, so growth rates are unaffected -- but this is
-the **marginal** Kolmogorov distance, not the `d`-dimensional orthant version the theory uses.
-`T = 1e6` used a single seed: the mean and quantiles rest on `1e6` measurements and are precise,
-while the maximum there is one draw of an extreme. And Section 7.5.2 is a statement about what `N`
-guarantees a fixed precision; Section 6 tests a necessary consequence of it at fixed `N`, not the
-bound itself.
-
----
-
-# Part 9: Nonlinear observation functions
-
-Every part up to here observes the state through a **linear** map. Part 9 replaces it with an
+Every part up to here observes the state through a **linear** map. Part 8 replaces it with an
 arbitrary one -- the model from the supervision whiteboard,
 
 ```
@@ -983,8 +898,8 @@ is not merely noisy but meaningless:
 
 The observation cannot tell `x` from `-x`, so the exact posterior is symmetric and its mean is pinned
 near zero wherever the state is. A mean-based metric would have reported these four as catastrophic
-failures while the filters were performing normally for this matrix. The Kolmogorov distance was
-adopted in Part 8 for its scale-freeness; **its more consequential property turns out to be being
+failures while the filters were performing normally for this matrix. The Kolmogorov distance is
+taken from Part 9 for its scale-freeness; **its more consequential property turns out to be being
 defined at all when the posterior is multimodal.**
 
 ## What was not settled
@@ -992,12 +907,12 @@ defined at all when the posterior is multimodal.**
 `x^2` is the one cell where more particles stop helping: slope `-0.342`, and `0.0370 -> 0.0355` from
 `N = 4000` to `N = 16000` where every other function halves. `|x|` is equally bimodal and scales at
 `-0.495`, so bimodality alone is not the cause -- `sq_only` is bimodal **and** the most informative
-group-C function, and it is that pairing that flattens the curve. It is the same mechanism Part 9
+group-C function, and it is that pairing that flattens the curve. It is the same mechanism Part 8
 isolates at `b = 1`, reached by raising precision instead of letting the state wander.
 
 > **Correction (added after Part 13).** The paragraph above is withdrawn. Over 12 datasets instead
 > of one, `sq_only` fits `-0.5007 +- 0.0207` -- `t = -0.07` from the theoretical `-0.5` and
-> `t = -15.00` from `-0.342`, with Part 9's value `7.7` CI widths outside the interval and `0` of
+> `t = -15.00` from `-0.342`, with Part 8's value `7.7` CI widths outside the interval and `0` of
 > `12` datasets above `-0.40`. `sq_only` scales like everything else. The explanation offered above
 > was an explanation of noise; there was nothing to explain. Part 13 Section 3 has the measurement.
 
@@ -1005,6 +920,95 @@ isolates at `b = 1`, reached by raising precision instead of letting the state w
 `3e3` along a single trajectory, which fixing the median cannot address.
 
 ---
+
+---
+
+# Part 9: The Kolmogorov distance — measuring what the theorem bounds
+
+Part 6 closed by saying the theorem and the experiment used different metrics. This notebook
+measures the one the theorem uses, on the same grid, so the comparison is like for like.
+
+The distance is `sup_z |F_cloud(z) - F_exact(z)|` along a direction, maximised over directions: a
+difference of two probabilities, so it can never exceed 1. `filters.py` gains `normal_cdf`,
+`unit_directions` and `weighted_ks_vs_gaussian`, plus a `stat_fn` hook on `particle_filter_md` that
+computes a per-step diagnostic and discards the cloud. That hook is what makes `T = 1e6` possible:
+storing the cloud would need about 16 GB, the statistic is 8 MB. With `stat_fn=None` the filter is
+bit-identical to the one used in Parts 1-6.
+
+### The metric was checked before it was used
+
+- `normal_cdf` against `math.erf`: max error `7.45e-8` (no scipy in this repo).
+- An exact sample of size `N` from the target: fitted slope `-0.5004`, with `D sqrt(N)` between
+  `0.985` and `1.035`. This also **calibrates** the metric -- `D ~ 1.017 / sqrt(N)` for an exact
+  sample.
+- A deliberately shifted target: measured matches the analytic supremum to within Monte Carlo noise
+  at all four shifts.
+- A single particle carrying all the weight scores exactly `0.5` at the posterior mean. **Any step
+  whose ESS collapses to ~1 scores at least 0.5**, which drives everything below.
+
+### The per-step error distribution is stationary
+
+Across ten blocks of a `1e6`-step run at `rho = 1` with `M < d`, last block over first:
+
+| mean | median | q90 | q99 | q99.9 | rate > 0.25 |
+|---|---|---|---|---|---|
+| 1.002 | 1.000 | 1.003 | 1.002 | 0.995 | 1.001 |
+
+Only the two rarest statistics move at all. The maximum at any horizon is then **predicted from the
+`(1 - 1/T)` quantile of that distribution, with nothing fitted**, to within 15% over four decades
+(`obs/pred` = 0.947, 1.149, 1.052, 0.951, 1.035). **The growth of the worst case is an
+extreme-value effect, not degradation** -- longer runs do not make the filter worse, they give more
+chances to observe the same rare bad step. This is the direct answer to Dr Gerber's question about
+`M < d` at long horizons.
+
+### Which statistic you report decides whether the theory appears to hold
+
+Growth over `T: 1e2 -> 1e6`, against `sqrt(log T)` = 1.732 on this range:
+
+| statistic | growth | fitted `(log T)^a` |
+|---|---|---|
+| mean | 1.00 - 1.07 | `a = -0.001 - 0.054` (no trend) |
+| **q99.9** | **1.46 - 2.31** | **`a = 0.346 - 0.714`** |
+| maximum | 2.95 - 4.00 | `a = 1.008 - 1.261` |
+| mean gap (Parts 1-6) | 1.03 - 1.11 | — |
+| max gap (Parts 1-6) | 5.71 - 8.69 | Part 6 reported 7.1 - 9.4 |
+
+The `q99.9` row brackets both `sqrt(log T)` and the `a = 0.5` of Section 7.5.1. Part 6's `a = 1.74 -
+2.03` on the maximum falls to `1.008 - 1.261` here, because at `T = 1e6` the bounded metric has
+reached `0.92 - 1.00` and has nowhere left to go.
+
+### The `sqrt(N)` collapse is recovered
+
+The mean distance decays as `N^-0.479` to `N^-0.482` against a theoretical `-0.5`, where Part 6
+measured `-0.22` to `-0.36` on the unbounded metric. Rescaled, `D sqrt(N)` is also **flat in `T`**
+(2.46, 2.49, 2.49 over two decades, where `sqrt(log T)` would give 1.29x), so for the mean the
+`N >= C log T` requirement is conservative. The maximum still does not collapse (`N^-0.114` to
+`N^-0.434`), exactly as the extreme-value reading predicts.
+
+### A thousand particles are worth 128-236 independent draws
+
+Using the Section 1 calibration, at `N = 1000` and `T = 1e6`:
+
+| regime | effective `N` | % of nominal |
+|---|---|---|
+| `M = d`, `rho = 0.9` | 236 | 23.6% |
+| `M > d`, `rho = 0.9` | 174 | 17.4% |
+| `M < d`, `rho = 0.9` | 156 | 15.6% |
+| `M < d`, `rho = 1.0` | 128 | 12.8% |
+
+No quantity in Parts 1-6 can be calibrated this way, because none of them is a probability. The
+metric also tracks cloud health far better: against `log(ESS)` it correlates at `-0.654` where the
+mean distance manages `-0.300`.
+
+### Limitations
+
+The distance is taken over the `d` coordinate axes. Adding 64 random directions raises it by a
+near-constant `1.21x` across all six configurations, so growth rates are unaffected -- but this is
+the **marginal** Kolmogorov distance, not the `d`-dimensional orthant version the theory uses.
+`T = 1e6` used a single seed: the mean and quantiles rest on `1e6` measurements and are precise,
+while the maximum there is one draw of an extreme. And Section 7.5.2 is a statement about what `N`
+guarantees a fixed precision; Section 6 tests a necessary consequence of it at fixed `N`, not the
+bound itself.
 
 ---
 
@@ -1108,7 +1112,7 @@ happens at any particular `M`.
 
 ### What this costs the particle filter: not what one would guess
 
-Scored with Part 8's Kolmogorov distance, computed twice per step along the observable and
+Scored with Part 9's Kolmogorov distance, computed twice per step along the observable and
 unobservable subspaces of `(F, H)` -- a split without which the effect averages away against the
 healthy coordinates.
 
@@ -1126,7 +1130,7 @@ healthy coordinates.
   posterior along it *is* the prior propagation -- exactly what the bootstrap proposal samples from,
   so the proposal is locally optimal there for free. Where it is observed weakly and from far away,
   the data do constrain it, the proposal ignores them, and the particles land in the wrong place.
-  This is Part 9 Section 9's failure mode in a linear model.
+  This is Part 8 Section 9's failure mode in a linear model.
 
 ### The one result that changes a conclusion of this project
 
@@ -1301,7 +1305,7 @@ needed averaging.
 **And the minimum ESS is worse than noisy — it is horizon-dependent.** Over the same datasets it
 falls by `4.7-5.2x` from `T = 100` to `T = 1600` while the mean ESS moves by `0.1-0.8%`. It is a
 minimum over a stationary series, so it falls with the length of the series by definition. This is
-Part 6's growing maximum and Part 8's extreme-value resolution of it, now recognised in the
+Part 6's growing maximum and Part 9's extreme-value resolution of it, now recognised in the
 cloud-health diagnostic as well as in the error: **the minimum ESS over a run is not a property of a
 filter, and no number of datasets fixes that — only quoting it at a stated horizon, or quoting the
 mean instead, does.**
@@ -1329,7 +1333,7 @@ do not constrain, and how differently depends on how completely they fail to con
 
 ### Does any verdict depend on Part 2's metric?
 
-No. Re-scored with Part 8's Kolmogorov distance on the same 30 datasets, the ordering is
+No. Re-scored with Part 9's Kolmogorov distance on the same 30 datasets, the ordering is
 `M = d < M > d < M < d` under both metrics, with `|t| = 8.67` and `9.38` separating `M = d` from the
 others. Two notes anyway: the **magnitude** is metric-dependent — Part 3's "`M < d` is ~40% worse" is
 `1.402` under the relative gap and `1.152` under the Kolmogorov distance, where `M > d` and `M < d`
@@ -1482,11 +1486,11 @@ of Parts 1-9; an **exact** locally optimal proposal computed by inverting a CDF 
 unaffordable in `d > 1`, and included as a *ceiling* rather than a method; a **linear** proposal from
 linearising `f` at each particle's prior mean, which is the textbook EKF proposal; and a **mixture**
 from linearising at every local maximum of the likelihood. Twenty datasets, paired within dataset,
-scored by the Kolmogorov distance of Part 8.
+scored by the Kolmogorov distance of Part 9.
 
 ### The cell it was sent to investigate did not need investigating
 
-Part 9 named `sq_only` at `b = 0.9` because its error scaled at `-0.342` rather than `-0.5`. Over 12
+Part 8 named `sq_only` at `b = 0.9` because its error scaled at `-0.342` rather than `-0.5`. Over 12
 datasets the paired slope is **`-0.5007 +- 0.0207`**: `t = -0.07` from `-0.5`, `t = -15.00` from
 `-0.342`, and not one of the 12 datasets above `-0.40`. The claim is withdrawn above.
 
@@ -1507,7 +1511,7 @@ At `N = 1000`, as `KS(bootstrap) / KS(proposal)` paired within each of 20 datase
 | `lin_xx`, `b = 0.9` | `1.403 +- 0.034` | `1.399 +- 0.027` | `1.413 +- 0.034` |
 
 The ceiling is `1.25x` to `1.71x`, well short of Part 3's linear-Gaussian rescue, and the reason is
-in the ESS: the bootstrap filter here already runs at `ESS/N = 0.44-0.56`, because Part 9 holds each
+in the ESS: the bootstrap filter here already runs at `ESS/N = 0.44-0.56`, because Part 8 holds each
 `f`'s observation precision fixed rather than letting the sharp ones dominate. A proposal that reads
 `y_t` before moving the particles helps in proportion to how sharp the likelihood is, and these are
 deliberately not sharp.
@@ -1569,7 +1573,7 @@ rate. That is the one line worth taking away.
 
 ### What generalises: it helps where the filter is broken, and hurts where it is not
 
-Mean paired ratio over the whole of Part 9's group C plus a linear control:
+Mean paired ratio over the whole of Part 8's group C plus a linear control:
 
 | | `exact` | `linear` | `mixture` | `linear t_5` | `mixture t_5` |
 |---|---|---|---|---|---|
@@ -1586,14 +1590,14 @@ at a point the linearisation got wrong.
 
 Where they earn their place is where the bootstrap filter is failing badly. The worst cell in the
 project is `log1px2_only` at `b = 1`, with a bootstrap distance of `0.30481` against the `0.047`
-floor the rest of Part 9's matrix sits at. There the crude `mixture` scores **`7.96 +- 1.68`** and
+floor the rest of Part 8's matrix sits at. There the crude `mixture` scores **`7.96 +- 1.68`** and
 **beats the exact proposal's** `6.91 +- 1.41`. So: **the gain from approximating the optimal proposal
 scales with how far the bootstrap filter is from its own sampling limit.** At the limit there is
 nothing to win and a badly shaped proposal can only lose.
 
 ### One thing a proposal cannot fix
 
-Part 9's bimodality penalty grows with the mode separation `2|x_t|`. Splitting the per-step error by
+Part 8's bimodality penalty grows with the mode separation `2|x_t|`. Splitting the per-step error by
 `|x_t|` over 19 datasets, the ratio between the `|x| > 8` and `|x| < 2` bins is `2.94 +- 0.68`
 (bootstrap), `2.80 +- 0.48` (exact), `2.07 +- 0.40` (linear) and `2.30 +- 0.83` (mixture) --
 **statistically indistinguishable**. Every proposal shifts the curve down; none flattens it. A
@@ -1652,26 +1656,26 @@ and found that the textbook approximation gives up the `N^-1/2` rate. What genui
    has none. Keeping every mode inside the prior's reach, and falling back to the prior mean when
    there are none, is a small change with a clear prediction attached: it should remove every cell
    where the mixture scores below `1`, and change nothing elsewhere.
-4. **Locate where the `log T` dependence enters (from Part 8).** Part 8 settles the metric
+4. **Locate where the `log T` dependence enters (from Part 9).** Part 9 settles the metric
    question -- the mean distance carries no horizon dependence at all, while the `99.9`th
    percentile grows like `(log T)^0.35-0.71`. Which quantile first picks up a `log T` term would
-   sharpen the reading of Section 7.5.2, and costs nothing beyond rerunning Part 8's Section 6 on a
-   finer quantile grid. The `d`-dimensional orthant Kolmogorov distance, rather than Part 8's
+   sharpen the reading of Section 7.5.2, and costs nothing beyond rerunning Part 9's Section 6 on a
+   finer quantile grid. The `d`-dimensional orthant Kolmogorov distance, rather than Part 9's
    marginal version, is the other loose end.
 5. **Test Part 12's corrected rule on Parts 1, 1b, 4b and 6.** Part 13 gave it its first
-   out-of-sample test and it passed, flagging Part 9's `-0.342` as a shape claim from one dataset,
+   out-of-sample test and it passed, flagging Part 8's `-0.342` as a shape claim from one dataset,
    which it was. That is one prediction. Part 6 is the natural next target: its conclusions rest on
    2 seeds at `T = 1e6` and 4 at `1e5` by its own account, and it is built almost entirely on
    extreme-value statistics -- which the rule now says are dangerous only where they are free to
    move. A screen there is both a test of the rule and the last unscreened part of the repo.
-6. **A posterior-weighted curvature measure (from Part 9).** The relative residual of the affine fit
+6. **A posterior-weighted curvature measure (from Part 8).** The relative residual of the affine fit
    predicts the cost of forcing the Gaussian reduction at a correlation of only `0.596`. Weighting
    the misfit by the posterior rather than by the sampling window would plausibly do better, and
-   would turn Part 9 Section 6 from a ranking into a prediction.
-7. **A state-dependent `Sigma`, or a compact state space (from Part 9).** `e^x` and `x/(1 + |x|)`
+   would turn Part 8 Section 6 from a ranking into a prediction.
+7. **A state-dependent `Sigma`, or a compact state space (from Part 8).** `e^x` and `x/(1 + |x|)`
    cannot be run at `rho(F) = 1`: their Fisher information varies by `1e41` and `1e3` along one
    trajectory, so equalising its median is not enough. Either control would close the two cells
-   Part 9 had to drop.
+   Part 8 had to drop.
 8. **A de-trended formulation for explosive long runs (from Part 5).** Filtering `z_t = F^-t x_t`,
    or working in log scale, would make `b = 1.1` at `T = 2000` measurable instead of losing it to
    floating-point cancellation. Part 10 Section 8b raises the stakes: run naively, that cell returns
