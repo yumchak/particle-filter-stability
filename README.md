@@ -25,14 +25,10 @@ decaying and starts to explode.
 
 | File | Contents |
 |---|---|
-| `01_kf_pf_1d_comparison.ipynb` | **Part 1.** The 1D Kalman-vs-particle-filter study: simulation, both filters, the PF–KF comparison, stability over time and `N`, ESS and resampling, and a nonlinear example. |
-| `01b_kf_pf_1d_rho1.ipynb` | **Part 1b.** Part 1 re-run at `b = 1` (the threshold) instead of `0.9`. Shows the 1D fully-observed case is unaffected, and that Part 1's "the model forgets" explanation of its flat error curves was not the real mechanism. |
-| `02_md_dimension_study.ipynb` | **Part 2.** The multidimensional study: the three `M` vs `d` regimes, side-by-side comparison, and dimension scaling. |
-| `02b_md_dimension_rho1.ipynb` | **Part 2b.** Part 2 re-run at `rho(F) = 1` instead of `0.9`, with everything else identical. Answers whether the stable/unstable regime matters for the `M` vs `d` results. |
-| `03_robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. |
-| `03b_robustness_rho1.ipynb` | **Part 3b.** Part 3 re-run at `rho(F) = 1`. Confirms the error stays flat over `T = 2000`, puts the `M < d` penalty at 69% over 30 datasets, and shows the optimal proposal removes the degeneracy but not the threshold penalty. |
-| `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, tested in ordinary data and under very large observations. |
-| `04b_student_t_rho1.ipynb` | **Part 4b.** Part 4 re-run at `b = 1`. The random-walk variant Part 4 said it had not run: observations do become large, and it still makes no difference -- the dial is the innovation, not the observation level. |
+| `01b_kf_pf_1d_rho1.ipynb`<br>*baseline:* `01_kf_pf_1d_comparison.ipynb` | **Part 1.** The 1D Kalman-vs-particle-filter study: simulation, both filters, the PF-KF comparison, stability over time and `N`, ESS and resampling, and a nonlinear example. **Current version is `01b`, at the threshold `b = 1`**; it shows the 1D fully-observed case is unaffected, and that Part 1's "the model forgets" explanation of its flat error curves was not the real mechanism. The `01` baseline is the same study at `b = 0.9` and is still referenced by Parts 6, 8 and 11. |
+| `02b_md_dimension_rho1.ipynb`<br>*baseline:* `02_md_dimension_study.ipynb` | **Part 2.** The multidimensional study: the three `M` vs `d` regimes, side-by-side comparison, and dimension scaling. **Current version is `02b`, at `rho(F) = 1`**, everything else identical, answering whether the stable/unstable regime matters for the `M` vs `d` results. The `02` baseline is at `rho(F) = 0.9`; both carry correction boxes -- four of their claims have been withdrawn or corrected by Parts 3, 5, 7, 11 and 12. |
+| `03b_robustness_rho1.ipynb`<br>*baseline:* `03_robustness_study.ipynb` | **Part 3.** Stress-tests Part 2's claims: long horizons (`T = 2000`), error bars over 30 datasets, and whether a better proposal removes the large-`M` collapse. **Current version is `03b`, at `rho(F) = 1`**: the error stays flat over `T = 2000`, the `M < d` penalty is 69% over 30 datasets, and the optimal proposal removes the degeneracy but not the threshold penalty. The `03` baseline is at `rho(F) = 0.9` and is the source of the 30-dataset protocol Parts 11 and 12 reuse. |
+| `04b_student_t_rho1.ipynb`<br>*baseline:* `04_student_t_vs_gaussian.ipynb` | **Part 4.** The 1D particle filter run with Student-t instead of Gaussian state noise, in ordinary data and under very large observations. **Current version is `04b`, at `b = 1`** -- the random-walk variant Part 4 said it had not run: observations do become large, and it still makes no difference, the dial being the innovation rather than the observation level. The `04` baseline is at `b = 0.9` and holds the `nu` sweep of its Section 8; its in-model ESS claim was withdrawn by Part 12. |
 | `05_f_stability_threshold.ipynb` | **Part 5.** Varies the spectral radius of `F` across the stability threshold, in 1D and in `d` dimensions, with and without coupling: accuracy, cloud health, long-run behaviour, and what happens when an explosive direction is never observed. |
 | `06_long_horizons.ipynb` | **Part 6.** How the error grows with `T`, up to `10^6`. Tracks the **maximum** error across decades rather than comparing halves of one run. Finds the maximum grows `7-9x` while the mean grows `1.1x` -- the statistic, not the horizon, was what limited Parts 1-3b. |
 | `07_student_t_likelihood.ipynb` | **Part 7.** Student-t observation likelihood with `M > d`, under a control that holds total precision fixed. Extra coordinates cost nothing under any likelihood; what Part 2 saw was precision; and the `d`-dimensional projection stops being free, at up to `4.7x`. |
@@ -46,8 +42,14 @@ decaying and starts to explode.
 | `student_t_filters.py` | Part 4 additions: a particle filter with Gaussian or Student-t state noise, and a **grid filter** that computes the exact posterior for either model. Builds on `filters.py` without changing it. |
 | `observation_models.py` | Parts 7-9: arbitrary observation functions `f` (a 41-entry registry with **measured** rather than asserted structure), four potential shapes including the paper's own, the Section 5.3.2 projection, the affine surrogate, the information-equalising control, and exact grid benchmarks for `d = 1` and `d = 2`. Part 13 adds four proposals for a general scalar `f` -- bootstrap, an exact locally optimal one by numerical CDF inversion, and Gaussian or Student-t mixtures from linearising at the prior mean or at every likelihood mode. |
 
-The notebooks are numbered in reading order. All of them are committed **with their outputs**, so
-every plot and number renders on GitHub without running anything. Part 5 needs no additions to
+The notebooks are numbered in reading order. Parts 1-4 each exist in two versions: the plain number
+is the original run below the stability threshold (`rho(F) = 0.9`) and the `b` suffix is the same
+study at the threshold (`rho(F) = 1`), which is the current version and the one listed above. The two
+are companions rather than replacements -- the sub-threshold runs are the baseline that Parts 6, 8,
+11 and 12 compare against, so both are kept. From Part 5 onwards there is one notebook per part.
+
+All notebooks are committed **with their outputs**, so every plot and number renders on GitHub
+without running anything. Part 5 needs no additions to
 `filters.py`: the spectral radius is already a parameter of `build_model`, reachable through
 `run_case(d, M, b=..., coupling=...)`.
 
