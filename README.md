@@ -21,6 +21,10 @@ less stable than a Gaussian one when the observations are unbounded. **Part 5** 
 transition matrix `F` across the stability threshold `rho(F) = 1`, where the hidden state stops
 decaying and starts to explode.
 
+> **[REPORT.md](REPORT.md)** is the results report — the same work organised by question rather
+> than by notebook, with every section naming its sources. This README keeps the chronological
+> per-notebook write-up and the reasoning that led to each study.
+
 ## What's in this repo
 
 | File | Contents |
