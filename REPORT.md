@@ -199,6 +199,14 @@ relaxed condition of §5.3.1 requires `H_t(R^d)` to be a `d`-dimensional linear 
 which can hold when `M < d`, by dimension counting. **The rate holds, to within a fraction of a
 standard error, in exactly the regimes the conditions cover, and degrades in the one they exclude.**
 
+![Convergence in N, by regime](report/figures/fig01_rate_by_regime.png)
+
+***Figure 1.*** *Left: mean gap against `N` over 30 datasets, 95% CIs, against the `O(N^{-1/2})`
+reference. Right: the slope fitted **within** each dataset, 30 fits per regime; the red diamond is
+the single-dataset value originally reported. `M < d` sits clearly above `−0.5` and the
+single-dataset estimate sat below its own distribution.
+Source: [extensions/11](extensions/11_part2_error_bars.ipynb).*
+
 ---
 
 ## 5. Behaviour in `T`
@@ -217,6 +225,13 @@ From `T = 10⁴` onwards the mean is flat to three decimal places (`0.0404`, `0.
 design whose expected signal is `1.05` at `T = 2000` and *smaller* at `10⁶`, against measured noise
 of about ±3%. **Those studies were not limited by running too short; they were measuring a quantity
 that does not move.**
+
+![Maximum, mean and minimum ESS against T](report/figures/fig02_horizon_statistics.png)
+
+***Figure 2.*** *The same runs, three statistics. The maximum gap climbs steadily to `T = 10⁶`; the
+mean is flat from `10³` onward; the minimum ESS collapses early and then stops changing. Which of
+these is reported decides what the horizon appears to do.
+Source: [06](06_long_horizons.ipynb).*
 
 Growth is **logarithmic, not polynomial**: `(log T)^a` fits better than `T^b` in all six
 configurations (`R² ≈ 0.98–0.99` against `0.92–0.96`), with `a = 1.74–2.03`.
@@ -258,6 +273,13 @@ afterwards. The locally optimal proposal samples from `p(x_t | x_{t-1}, y_t)` in
 
 A **160×** difference in effective particles at `M = 16`, and the accuracy trend separates too: the
 bootstrap relative gap degrades `3.4×` as `M` grows while the optimal proposal's stays flat at ~0.04.
+
+![ESS over time, bootstrap against optimal](report/figures/fig03_ess_bootstrap_vs_optimal.png)
+
+***Figure 3.*** *Effective sample size at the hardest setting (`d = 4`, `M = 16`, `N = 1000`), log
+scale. The bootstrap filter spends the run below 100 effective particles and resamples at all 100
+steps; the optimal proposal stays around the `N/2` threshold and resamples 26 times.
+Source: [03](03_robustness_study.ipynb).*
 The honest statement is not "large `M` breaks particle filters" but **"large `M` breaks filters that
 propose blindly from the prior"** — a fixable problem, not a fundamental barrier.
 
@@ -294,6 +316,13 @@ Monotone in both directions across all twenty cells, and converging to exactly t
 `M = 8` the cost is `2.379`, `1.162`, `1.020`, `1.008`, `1.000` for `ν = 5, 30, 100, 1000` and
 Gaussian. Under a Gaussian likelihood the full and projected filters agree to `2e-15` on identical
 random numbers — they are the same filter.
+
+![Cost of the projection](report/figures/fig04_projection_cost.png)
+
+***Figure 4.*** *Left: the cost of discarding the orthogonal component falls monotonically to 1 as
+`ν → ∞`, reaching the Gaussian limit by `ν = 30` with nothing fitted. Right: the same cost grows
+with how much is discarded. Under a Gaussian likelihood the projection is exactly free.
+Source: [07](07_student_t_likelihood.ipynb).*
 
 **Mechanism.** The discarded component `w_t` carries no information about `x_t` — that is geometry —
 but it carries information about *how far to trust* the component that does. Split by residual size
@@ -344,6 +373,14 @@ Sweeping `M` from 1 to `d` over 84 cells (`d = 2, 4, 8`; `b = 1.0, 1.01, 1.1`; c
 - At **coupling 0.2** the cliff is gone — every cell bounded, including `M = 1` at `d = 8`, where
   one scalar per step holds the posterior variance of an explosive 8-dimensional state at `1815`.
 
+![Divergence as coupling vanishes](report/figures/fig05_coupling_divergence.png)
+
+***Figure 5.*** *Left: the posterior bound diverges as the coupling vanishes — continuous in the
+coupling, discontinuous in boundedness, with the jump to `6.2e33` only at exactly zero. Right:
+`σ_min(O)` orders the bound cleanly within a fixed `d` and fails across `d`, which is why it is
+reported as a negative result rather than as a continuous detectability margin.
+Source: [extensions/10](extensions/10_detectability_boundary.ipynb).*
+
 ### Detectability decides it, exactly
 
 Every eigenvalue of `F` with `|λ| ≥ 1` must be observable (the Hautus test,
@@ -385,6 +422,15 @@ direction that carries no information to justify the pruning.
 with no trend and no difference between `b = 0.9` and `b = 1.01` — a healthy-looking filter at every
 step of a run whose error had grown twentyfold.
 
+![Error, dispersion and ESS in the unobservable subspace](report/figures/fig06_unobservable_subspace.png)
+
+***Figure 6.*** *`d = 4`, `M = 1`, coupling `0`, `N = 1000`, over `T = 2000`. Left: error in the
+unobservable subspace (solid) grows without bound at and above the threshold while the observable
+subspace of the same runs (dotted) stays flat. Centre: the cloud becomes progressively
+under-dispersed along the unobserved direction. Right: the ESS reports nothing — no trend, and no
+difference between `b = 0.9` and `b = 1.01`.
+Source: [extensions/10](extensions/10_detectability_boundary.ipynb).*
+
 ---
 
 ## 8. Beyond linear-Gaussian
@@ -416,6 +462,13 @@ harder to represent, but also let particles reach further, making it easier to s
 the typical furthest of 1000 particles reaches `3.4` (Gaussian), `7.4` (`ν = 5`), `15.9` (`ν = 3`)
 and about `1000` (`ν = 1`). So the honest statement is not "heavier tails are less stable" but
 **"tails heavy enough to move the target, but not heavy enough to let particles follow"**.
+
+![The nu sweep](report/figures/fig07_nu_sweep.png)
+
+***Figure 7.*** *Log-likelihood RMSE under a single large observation, swept over `ν`. The worst case
+is interior — about `3.2×` the Gaussian at `ν ≈ 10` — and the Cauchy (`ν = 1`) is better than the
+Gaussian at both observation sizes. 150 seeds per point.
+Source: [04](04_student_t_vs_gaussian.ipynb) §8.*
 
 ### Nonlinear observation functions: the shape of `f` costs nothing
 
@@ -451,6 +504,13 @@ The groups are as structurally different as the paper's conditions allow and **a
 own scatter**. `clip(x, ±3)`, which destroys information outright, is the *best* cell in the matrix;
 `round(x)`, discontinuous with zero derivative almost everywhere, scores `0.0418`. Scaling in `N`
 confirms this is sampling error rather than bias — slopes `−0.478` to `−0.509`.
+
+![Cost of assuming the reduction](report/figures/fig08_reduction_cost.png)
+
+***Figure 8.*** *Left: the cost of forcing the affine reduction tracks the curvature of `f`, and is
+close to unchanged across the four potentials — the cost is geometric, not distributional. Right:
+the same cost ranked by function, from the linear images at exactly 1 to `tanh` at `14×`.
+Source: [08](08_nonlinear_observations.ipynb).*
 
 **What does cost something**
 
@@ -489,6 +549,14 @@ inversion serving as a ceiling, an EKF-style linearisation, and a mixture over l
 - **What no proposal fixes:** the error still rises with `|x|` by the same factor for all four.
   Proposals shift the curve down; none flattens it. A locally optimal proposal is local *in time*,
   and resolving the sign of a symmetric `f` requires path information.
+
+![Proposal accuracy and the max-weight diagnostic](report/figures/fig09_proposal_rate.png)
+
+***Figure 9.*** *Left and centre: accuracy against `N` for six proposals on two cells, with the
+`N^{-1/2}` reference. Right: the symptom — the mean largest normalised weight against `N`, with
+`1/N` for reference. The Gaussian approximations sit visibly shallower than `N^{-1/2}`; their
+Student-t versions recover it.
+Source: [extensions/13](extensions/13_proposals_nonlinear.ipynb).*
 
 ---
 
